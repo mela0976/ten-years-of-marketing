@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101a20" />
+    <meta name="description" content="用十個一分鐘，重新練習行銷決策。" />
+    <title>決策智慧：十年</title>
+  </head>
+  <body>
+    <div id="game">
+      <canvas id="world" aria-label="決策智慧十年長廊的 3D 場景" tabindex="0"></canvas>
+      <div id="scene-fallback" class="scene-fallback" hidden></div>
+      <header class="topbar">
+        <a class="wordmark" href="./" aria-label="決策智慧：十年首頁">決策智慧<span>／十年</span></a>
+        <div id="progress" class="progress" aria-label="十年進度" hidden></div>
+        <div id="team-score" class="team-score" aria-live="polite" hidden></div>
+        <button id="sound-toggle" class="icon-button" type="button" aria-pressed="false">音效開</button>
+      </header>
+      <main id="panel" class="panel" aria-live="polite"></main>
+      <div id="status" class="sr-only" role="status" aria-live="assertive"></div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

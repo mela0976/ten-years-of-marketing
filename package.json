@@ -1,0 +1,27 @@
+{
+  "name": "decision-intelligence-ten-years",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "predev": "npm run copy:draco",
+    "build": "vite build",
+    "prebuild": "npm run copy:draco",
+    "preview": "vite preview",
+    "test": "node --test src/logic.test.mjs",
+    "check": "node scripts/check-dist.mjs",
+    "build:models": "node scripts/build-models.mjs",
+    "build:audio": "sh scripts/build-audio.sh",
+    "copy:draco": "node scripts/copy-draco.mjs"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
+    "draco3dgltf": "1.5.9",
+    "vite": "8.3.8"
+  }
+}

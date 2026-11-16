@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.claude
+
+.codex-run*.log
+FIXES-*.md
+.DS_Store
