@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 const GREEN = 0x1f6f5c;
 const GREEN_LIGHT = 0x79bda0;
@@ -14,19 +15,29 @@ function material(color, extra = {}) {
 
 function createLabelTexture(title, lines = [], accent = '#1f6f5c') {
   const canvas = document.createElement('canvas');
-  canvas.width = 768;
-  canvas.height = 420;
+  canvas.width = 1024;
+  canvas.height = 512;
   const context = canvas.getContext('2d');
   context.fillStyle = '#f4f0e6';
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = accent;
-  context.fillRect(0, 0, canvas.width, 26);
+  context.fillRect(0, 0, canvas.width, 32);
   context.fillStyle = '#16242a';
-  context.font = '700 148px system-ui, sans-serif';
-  context.fillText(title, 38, 190, 690);
+  context.textAlign = 'center';
+  let titleSize = 220;
+  const titleWidth = () => context.measureText
+    ? context.measureText(title).width
+    : [...title].length * titleSize;
+  context.font = `700 ${titleSize}px system-ui, sans-serif`;
+  while (titleSize > 64 && titleWidth() > 944) {
+    titleSize -= 4;
+    context.font = `700 ${titleSize}px system-ui, sans-serif`;
+  }
+  context.textBaseline = 'middle';
+  context.fillText(title, canvas.width / 2, 210, 944);
   context.fillStyle = '#41514d';
-  context.font = '500 30px system-ui, sans-serif';
-  lines.forEach((line, index) => context.fillText(line, 38, 192 + index * 62, 690));
+  context.font = '500 36px system-ui, sans-serif';
+  lines.forEach((line, index) => context.fillText(line, canvas.width / 2, 330 + index * 58, 944));
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 2;
@@ -80,6 +91,7 @@ export class GameScene {
       const keyLight = new THREE.DirectionalLight(0xfff3dc, 2.1);
       keyLight.position.set(-4, 8, 6);
       this.scene.add(keyLight);
+      this.createSkybox();
       this.scene.add(this.createCorridor());
       this.scene.add(this.stageObjects);
       this.resize();
@@ -96,6 +108,35 @@ export class GameScene {
       this.fallback.textContent = '這台裝置無法顯示 3D；仍可用下方按鈕完成十章。';
       this.canvas.hidden = true;
     }
+  }
+
+  createSkybox() {
+    const material = new THREE.MeshBasicMaterial({
+      color: DARK,
+      fog: false,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.skybox = new THREE.Mesh(new THREE.PlaneGeometry(300, 150), material);
+    this.skybox.renderOrder = -100;
+    this.skybox.frustumCulled = false;
+    this.scene.add(this.skybox);
+
+    const loader = new KTX2Loader();
+    loader.setTranscoderPath(`${import.meta.env.BASE_URL}basis/`);
+    loader.detectSupport(this.renderer);
+    loader.load(
+      `${import.meta.env.BASE_URL}textures/skybox.ktx2`,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.skybox.material.map = texture; this.skybox.material.color.setHex(0xffffff);
+        this.skybox.material.needsUpdate = true;
+        loader.dispose();
+      },
+      undefined,
+      () => loader.dispose(),
+    );
   }
 
   createCorridor() {
@@ -340,9 +381,9 @@ export class GameScene {
         visual.position.set(x, 0.12 + height / 2, this.getStageZ());
         this.stageObjects.add(visual);
       }
-      const label = new THREE.Mesh(new THREE.PlaneGeometry(chapter.year === 2024 ? 1.65 : 1.8, chapter.year === 2024 ? 0.48 : 0.48),
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(chapter.year === 2024 ? 2.0 : 2.8, chapter.year === 2024 ? 0.77 : 1.08),
         new THREE.MeshBasicMaterial({ map: createLabelTexture(option.title, []), toneMapped: false, side: THREE.DoubleSide }));
-      label.position.set(x, chapter.year === 2024 ? 3.62 : 1.65, this.getStageZ() + 0.34);
+      label.position.set(x, chapter.year === 2024 ? 3.62 : 1.82, this.getStageZ() + 0.34);
       this.stageObjects.add(label);
       this.pickVisuals.push({ visual, label });
       this.makeHitbox(chapter.year === 2024 ? 1.8 : 2.3, 3.4, x, 1.9, 0.45, 'pick', index);
@@ -579,9 +620,9 @@ export class GameScene {
         bottle.position.set(x, 1.12, this.getStageZ());
       }
       this.stageObjects.add(bottle);
-      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.48),
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.77),
         new THREE.MeshBasicMaterial({ map: createLabelTexture(option.title, []), toneMapped: false, side: THREE.DoubleSide }));
-      label.position.set(x, 2.42, this.getStageZ() + 0.38);
+      label.position.set(x, 2.7, this.getStageZ() + 0.38);
       this.stageObjects.add(label);
       this.makeHitbox(1.8, 3.4, x, 1.8, 0.55, 'pick', index);
       this.agentBottles.push(bottle);
@@ -622,8 +663,17 @@ export class GameScene {
     const frame = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.6, 0.2), material(GREEN));
     frame.position.set(0, 2, this.getStageZ());
     this.stageObjects.add(frame);
-    const card = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.4),
-      new THREE.MeshBasicMaterial({ map: createLabelTexture('十年', ['判斷不能外包。']), toneMapped: false, side: THREE.DoubleSide }));
+    const card = new THREE.Group();
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.4),
+      new THREE.MeshBasicMaterial({ map: createLabelTexture('十年', ['判斷不能外包。']), toneMapped: false }));
+    front.position.z = 0.018;
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(3, 3.4),
+      new THREE.MeshBasicMaterial({ color: DARK, side: THREE.DoubleSide, toneMapped: false }));
+    back.position.z = -0.018;
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.24),
+      new THREE.MeshBasicMaterial({ color: GREEN, side: THREE.DoubleSide, toneMapped: false }));
+    band.position.set(0, 1.36, -0.02);
+    card.add(front, back, band);
     card.position.set(0, 2, this.getStageZ() + 0.12);
     card.visible = false;
     this.stageObjects.add(card);
@@ -726,6 +776,10 @@ export class GameScene {
         tween.update(progress);
         return progress < 1;
       });
+      if (this.skybox) {
+        this.skybox.position.copy(this.camera.position).addScaledVector(this.camera.getWorldDirection(new THREE.Vector3()), 100);
+        this.skybox.quaternion.copy(this.camera.quaternion);
+      }
       this.renderer.render(this.scene, this.camera);
       this.frameId = requestAnimationFrame(frame);
     };
