@@ -5,3 +5,5 @@ dist/
 .codex-run*.log
 FIXES-*.md
 .DS_Store
+design-ref/
+.npm-cache/

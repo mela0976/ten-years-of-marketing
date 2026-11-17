@@ -1,10 +1,11 @@
 import './style.css';
 import content from './content.js';
 import gamify from './gamify-content.js';
+import roleConfig from './role-content.js';
 import { AudioManager } from './audio.js';
 import { GameScene } from './scene/game-scene.js';
 import { createStageGuard } from './stage-guard.js';
-import { getRunTotals, maxChapterScore, personaId, rankTeams, rivalChapterAward, rivalQuickAward, scoreMiniGame, scoreQuick, scoreReply, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect } from './logic.js';
+import { applyRoleMultiplier, desktopCameraDistance, getRunTotals, hintMultiSelection, hintPickIndices, maxChapterScore, personaId, rankTeams, rivalChapterAward, rivalQuickAward, scoreMiniGame, scoreMultiGame, scoreQuick, scoreReply, sliderHintRange, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect, timerSecondsForRole } from './logic.js';
 import { button, element, setPanel, statusText, updateProgress } from './ui.js';
 
 const STORAGE_KEY = 'decision-ten-years-progress';
@@ -15,18 +16,25 @@ const canvas = document.querySelector('#world');
 const fallback = document.querySelector('#scene-fallback');
 const audio = new AudioManager(document.querySelector('#sound-toggle'));
 const teamScore = document.querySelector('#team-score');
+const employeeBadge = element('div', { className: 'employee-badge', hidden: true });
+const roleMultiplier = element('span', { className: 'role-multiplier', hidden: true });
+teamScore.before(employeeBadge);
+teamScore.after(roleMultiplier);
 const shortcut = new URLSearchParams(window.location.search);
 const shortcutChapter = Number(shortcut.get('c'));
 const hasChapterShortcut = Number.isInteger(shortcutChapter) && shortcutChapter >= 1 && shortcutChapter <= 10;
 const shortcutIndex = hasChapterShortcut ? shortcutChapter - 1 : null;
 const shortcutToGame = hasChapterShortcut && shortcut.get('g') === '1' && shortcutIndex < 9;
+const validRoleIds = roleConfig.roles.map((role) => role.id);
+const queryRole = shortcut.get('role');
+const initialRole = validRoleIds.includes(queryRole) ? queryRole : roleConfig.defaultRole;
 
 function restoredProgress() {
   try {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (!value || value.version !== 2 || !Number.isInteger(value.index) || !Array.isArray(value.results)
+    if (!value || value.version !== 3 || !Number.isInteger(value.index) || !Array.isArray(value.results)
       || !gamify.teams.includes(value.team) || !Number.isFinite(value.score) || !Number.isFinite(value.seed)) {
-      return { index: 0, results: [], started: false, team: null, score: 0, seed: newSeed(), noTimer: window.matchMedia('(prefers-reduced-motion: reduce)').matches, rivalScores: {}, rivalAwarded: [], quickRivalsAwarded: false };
+      return { index: 0, results: [], started: false, role: initialRole, team: null, score: 0, seed: newSeed(), noTimer: window.matchMedia('(prefers-reduced-motion: reduce)').matches, rivalScores: {}, rivalAwarded: [], quickRivalsAwarded: false, hintsLeft: 0, hintsUsed: [] };
     }
     const index = Math.max(0, Math.min(9, value.index));
     const results = value.results.slice(0, index).filter((item) => item && ['perf', 'brand'].includes(item.lean));
@@ -34,6 +42,7 @@ function restoredProgress() {
       index: results.length === index ? index : 0,
       results: results.length === index ? results : [],
       started: results.length === index && value.started === true,
+      role: validRoleIds.includes(value.role) ? value.role : initialRole,
       team: value.team,
       score: value.score,
       seed: value.seed,
@@ -41,13 +50,20 @@ function restoredProgress() {
       rivalScores: value.rivalScores && typeof value.rivalScores === 'object' ? value.rivalScores : {},
       rivalAwarded: Array.isArray(value.rivalAwarded) ? value.rivalAwarded : [],
       quickRivalsAwarded: Boolean(value.quickRivalsAwarded),
+      hintsLeft: Number.isInteger(value.hintsLeft) ? Math.max(0, value.hintsLeft) : 0,
+      hintsUsed: Array.isArray(value.hintsUsed) ? value.hintsUsed.filter(Number.isInteger) : [],
     };
   } catch {
-    return { index: 0, results: [], started: false, team: null, score: 0, seed: newSeed(), noTimer: window.matchMedia('(prefers-reduced-motion: reduce)').matches, rivalScores: {}, rivalAwarded: [], quickRivalsAwarded: false };
+    return { index: 0, results: [], started: false, role: initialRole, team: null, score: 0, seed: newSeed(), noTimer: window.matchMedia('(prefers-reduced-motion: reduce)').matches, rivalScores: {}, rivalAwarded: [], quickRivalsAwarded: false, hintsLeft: 0, hintsUsed: [] };
   }
 }
 
 function newSeed() { return Math.floor(Math.random() * 0x100000000); }
+
+function roleFor(id = state.role) {
+  return roleConfig.roles.find((role) => role.id === id)
+    ?? roleConfig.roles.find((role) => role.id === roleConfig.defaultRole);
+}
 
 const saved = restoredProgress();
 const state = {
@@ -56,6 +72,12 @@ const state = {
   phase: shortcutToGame ? 'game' : hasChapterShortcut ? 'chat' : saved.started ? 'chat' : 'intro',
   currentResult: shortcutToGame ? { lean: 'brand', scored: Boolean(content.chapters[shortcutIndex].game?.scored), correct: null } : null,
   team: hasChapterShortcut ? gamify.teams[0] : saved.team,
+  role: hasChapterShortcut ? initialRole : saved.role,
+  roleSelection: hasChapterShortcut ? initialRole : saved.role,
+  hintsLeft: hasChapterShortcut ? roleFor(initialRole).hints : saved.hintsLeft,
+  hintsUsed: hasChapterShortcut ? [] : saved.hintsUsed,
+  multiSelection: [],
+  pickAllowed: null,
   score: hasChapterShortcut ? 0 : saved.score,
   seed: hasChapterShortcut ? newSeed() : saved.seed,
   noTimer: hasChapterShortcut ? false : saved.noTimer,
@@ -108,19 +130,29 @@ function allResults() {
 function storeProgress() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      version: 2, index: state.index, results: state.results, started: state.phase !== 'intro',
+      version: 3, index: state.index, results: state.results, started: state.phase !== 'intro', role: state.role,
       team: state.team, score: state.score, seed: state.seed, noTimer: state.noTimer,
       rivalScores: state.rivalScores,
       rivalAwarded: state.rivalAwarded, quickRivalsAwarded: state.quickRivalsAwarded,
+      hintsLeft: state.hintsLeft, hintsUsed: state.hintsUsed,
     }));
   } catch {
     // The run remains playable when storage is unavailable.
   }
 }
 
+// Screens are often drawn straight from a callback, so the layout flags follow the phase itself, not render().
+function syncLayout() {
+  const game = document.querySelector('#game');
+  if (!game) return;
+  game.dataset.phase = state.phase;
+  game.dataset.layout = ['role', 'persona'].includes(state.phase) ? 'review' : state.phase;
+}
+
 function beginStage(phase = state.phase) {
   state.phase = phase;
   state.stageCode = stageGuard.advance(phase);
+  syncLayout();
 }
 
 function movePhase(phase) {
@@ -129,6 +161,7 @@ function movePhase(phase) {
   const leavingQuick = state.phase === 'quick' && phase !== 'quick';
   state.phase = phase;
   state.stageCode = stageGuard.enter(phase);
+  syncLayout();
   if (leavingMiniGame) {
     stopGameTimer();
     if (state.stopTimer !== null) window.clearInterval(state.stopTimer);
@@ -148,9 +181,13 @@ function scheduleStageCallback(callback, delay, onStale = () => {}) {
 
 function setPhase(phase) {
   movePhase(phase);
-  updateProgress(progress, state.index, !['intro', 'team', 'warmup', 'warmup-result'].includes(phase));
-  teamScore.hidden = !state.team || ['intro', 'team'].includes(phase);
-  if (!teamScore.hidden && !state.scoreAnimating) teamScore.textContent = `${state.team}　${state.score.toLocaleString('zh-TW')} 分`;
+  updateProgress(progress, state.index, !['intro', 'role', 'team', 'warmup', 'warmup-result'].includes(phase));
+  teamScore.hidden = !state.team || ['intro', 'role', 'team'].includes(phase);
+  employeeBadge.hidden = !state.team || ['intro', 'team', 'role'].includes(phase);
+  roleMultiplier.hidden = employeeBadge.hidden || roleFor().scoreMultiplier === 1;
+  employeeBadge.textContent = `${'▮'.repeat(roleFor().level)}${'▯'.repeat(roleConfig.maxLevel - roleFor().level)}　${roleFor().name}・${state.team ?? ''}`;
+  roleMultiplier.textContent = `身份 ×${roleFor().scoreMultiplier}`;
+  if (!teamScore.hidden && !state.scoreAnimating) teamScore.textContent = `${state.score.toLocaleString('zh-TW')} 分`;
   render();
 }
 
@@ -172,12 +209,23 @@ function showIntro() {
     state.noTimer = event.currentTarget.checked;
     storeProgress();
   });
-  setPanel(panel, '十年長廊', content.title, [
-    element('p', { className: 'intro-copy', text: content.intro }),
+  const identity = element('section', { className: 'paper-card identity-notice' }, [
+    element('div', { className: 'paper-kicker' }, [element('span', { text: roleConfig.labels.notice }), element('span', { text: roleConfig.labels.noticeNo })]),
+    element('div', { className: 'paper-heading' }, [element('h2', { text: content.title }), element('p', { text: content.intro })]),
+    element('div', { className: 'identity-fields' }, [
+      element('div', {}, [element('span', { text: roleConfig.labels.joinYear }), element('strong', { text: '2018' })]),
+      element('div', {}, [element('span', { text: roleConfig.labels.level }), element('strong', { text: roleConfig.labels.pending })]),
+      element('div', {}, [element('span', {}, roleConfig.labels.dept), element('strong', { text: roleConfig.labels.pending })]),
+    ]),
+  ]);
+  setPanel(panel, '', '', [
+    identity,
+    best === null ? null : element('p', { className: 'choice-hint best-score', text: `最佳 ${best.toLocaleString('zh-TW')}` }),
     element('ul', { className: 'rules-list' }, gamify.rules.map((rule) => element('li', { text: rule }))),
-    timerToggle,
-    best === null ? null : element('p', { className: 'choice-hint', text: `最佳 ${best.toLocaleString('zh-TW')}` }),
-    action('開始', () => { audio.start(); audio.play('flip'); movePhase('team'); render(); }, 'primary'),
+    element('div', { className: 'intro-actions' }, [
+      action(roleConfig.labels.getBadge, () => { audio.start(); audio.play('flip'); movePhase('role'); render(); }, 'primary'),
+      timerToggle,
+    ]),
   ], 'open');
 }
 
@@ -191,16 +239,82 @@ function readBestScore() {
 }
 
 function showTeamSelection() {
-  setPanel(panel, '第一步', gamify.teamPrompt, [
-    element('div', { className: 'option-grid' }, gamify.teams.map((team) => action(team, () => {
+  setPanel(panel, roleConfig.labels.teamStep, gamify.teamPrompt, [
+    renderIdentityCard(roleFor(state.roleSelection), true),
+    element('div', { className: 'option-grid department-options' }, gamify.teams.map((team) => action(team, () => {
       state.team = team;
       state.score = 0;
+      state.hintsLeft = roleFor(state.roleSelection).hints;
+      state.hintsUsed = [];
       state.rivalScores = Object.fromEntries(gamify.rivals.map((rival) => [rival.name, 0]));
       state.rivalAwarded = [];
       movePhase('warmup');
       storeProgress();
       render();
     }, 'option'))),
+  ], 'open');
+}
+
+function renderIdentityCard(role, compact = false) {
+  const pips = Array.from({ length: roleConfig.maxLevel }, (_, index) => element('span', { className: index < role.level ? 'is-on' : '' }));
+  return element('section', { className: `identity-card${compact ? ' is-compact' : ''}` }, [
+    renderAvatarSilhouette('identity-avatar'),
+    element('div', { className: 'identity-card-body' }, [
+      element('strong', { className: 'identity-name', text: role.name }),
+      element('span', { className: 'identity-code', text: role.code }),
+      element('span', { className: 'identity-department' }, [roleConfig.labels.dept, element('b', { text: compact ? state.team ?? roleConfig.labels.pending : roleConfig.labels.pending })]),
+    ]),
+    element('span', { className: 'identity-level', attrs: { role: 'img', 'aria-label': `職級 ${role.level}／${roleConfig.maxLevel}` } }, pips),
+  ]);
+}
+
+function renderAvatarSilhouette(className) {
+  const namespace = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(namespace, 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', '0 0 64 80');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const rect = document.createElementNS(namespace, 'rect');
+  rect.setAttribute('width', '64');
+  rect.setAttribute('height', '80');
+  rect.setAttribute('fill', '#dcd6c6');
+  const head = document.createElementNS(namespace, 'circle');
+  head.setAttribute('cx', '32');
+  head.setAttribute('cy', '30');
+  head.setAttribute('r', '13');
+  head.setAttribute('fill', '#b9b4a6');
+  const body = document.createElementNS(namespace, 'path');
+  body.setAttribute('d', 'M8 80 C8 58 20 50 32 50 C44 50 56 58 56 80 Z');
+  body.setAttribute('fill', '#b9b4a6');
+  svg.append(rect, head, body);
+  return svg;
+}
+
+function renderRoleSelection() {
+  const current = roleFor(state.roleSelection);
+  const roleButtons = element('div', { className: 'role-choices' }, roleConfig.roles.map((role) => action('', () => {
+    state.roleSelection = role.id;
+    renderRoleSelection();
+  }, 'role-option', { 'aria-pressed': String(role.id === state.roleSelection) })));
+  roleButtons.querySelectorAll('button').forEach((node, index) => {
+    const role = roleConfig.roles[index];
+    node.replaceChildren(element('span', { className: 'role-choice-name', text: role.name }), element('span', { className: 'role-choice-job', text: role.job }), element('span', { className: 'role-choice-pace', text: role.pace }));
+    node.classList.toggle('is-selected', role.id === state.roleSelection);
+    const pips = element('span', { className: 'identity-level', attrs: { 'aria-hidden': 'true' } }, Array.from({ length: roleConfig.maxLevel }, (_, level) => element('span', { className: level < role.level ? 'is-on' : '' })));
+    node.append(pips);
+  });
+  const details = element('div', { className: 'role-details' }, [
+    element('dl', {}, [
+      element('dt', { text: roleConfig.labels.who }), element('dd', { text: current.who }),
+      element('dt', { text: roleConfig.labels.power }), element('dd', { text: current.power }),
+      element('dt', { text: roleConfig.labels.pace }), element('dd', { text: current.pace }),
+    ]),
+    element('p', { text: current.line }),
+  ]);
+  setPanel(panel, roleConfig.labels.roleStep, roleConfig.prompt, [
+    element('div', { className: 'role-layout' }, [roleButtons, element('div', { className: 'role-preview-column' }, [renderIdentityCard(current), details])]),
+    action(roleConfig.labels.next, () => { state.role = state.roleSelection; movePhase('team'); storeProgress(); render(); }, 'primary'),
   ], 'open');
 }
 
@@ -241,12 +355,12 @@ function animateScore(from, to) {
   const frame = (now) => {
     if (!stageGuard.isCurrent(stageCode)) {
       state.scoreAnimating = false;
-      teamScore.textContent = `${state.team}　${state.score.toLocaleString('zh-TW')} 分`;
+      teamScore.textContent = `${state.score.toLocaleString('zh-TW')} 分`;
       return;
     }
     const progress = Math.min(1, (now - start) / duration);
     const value = Math.round(from + (to - from) * progress);
-    teamScore.textContent = `${state.team}　${value.toLocaleString('zh-TW')} 分`;
+    teamScore.textContent = `${value.toLocaleString('zh-TW')} 分`;
     if (progress < 1) requestAnimationFrame(frame);
     else state.scoreAnimating = false;
   };
@@ -276,8 +390,9 @@ function awardMiniGame(correct, { timeout = false } = {}) {
     timed: !state.noTimer && game.type !== 'stop',
     timeout,
   });
-  awardPoints(points, { sound: false });
-  state.lastAward = points;
+  const adjustedPoints = applyRoleMultiplier(points, roleFor().scoreMultiplier);
+  awardPoints(adjustedPoints, { sound: false });
+  state.lastAward = adjustedPoints;
   state.lastTier = tier;
 }
 
@@ -286,7 +401,7 @@ function startGameTimer() {
   const game = currentChapter().game;
   if (state.noTimer || game.type === 'stop') return;
   const tier = gamify.scoring.tierByChapter[state.index];
-  state.timerTotal = gamify.scoring.timerSecondsByTier[tier];
+  state.timerTotal = timerSecondsForRole(gamify.scoring.timerSecondsByTier[tier], roleFor().timerDelta, roleConfig.minTimerSeconds);
   state.timerRemaining = state.timerTotal;
   const startedAt = performance.now();
   const stageCode = state.stageCode;
@@ -334,6 +449,11 @@ function enterChapter(animate = true) {
   state.currentResult = null;
   state.gameValue = chapter.game?.start ?? 0;
   state.optionFocus = 0;
+  state.multiSelection = [];
+  state.hintLockedIndex = null;
+  state.sliderHint = '';
+  state.multiFeedback = '';
+  state.pickAllowed = null;
   state.swipeIndex = 0;
   state.swipeCorrect = 0;
   state.swipeCount = 0;
@@ -349,16 +469,22 @@ function enterChapter(animate = true) {
 
 function renderChat() {
   const chapter = currentChapter();
-  const replies = element('div', { className: 'option-grid' }, chapter.chat.replies.map((reply, index) =>
+  const replies = element('div', { className: 'option-grid reply-options' }, chapter.chat.replies.map((reply, index) =>
     action(reply.text, () => selectReply(index), 'option')));
+  const role = roleFor();
+  const lead = element('div', { className: 'chat-bubble chat-lead' }, [
+    element('span', { className: 'role-avatar', text: role.avatar, attrs: { 'aria-hidden': 'true' } }),
+    element('div', {}, [element('p', { className: 'chat-speaker', text: role.contact }), element('p', { className: 'chat-text', text: role.lead.replace('{from}', chapter.chat.from) })]),
+  ]);
   const message = element('p', { className: 'chat-text', text: '' });
   typeText(message, chapter.chat.text);
   const bubble = element('div', { className: 'chat-bubble' }, [
     element('p', { className: 'chat-speaker', text: chapter.chat.from }),
     message,
   ]);
-  setPanel(panel, chapterLabel(chapter, String(state.index + 1).padStart(2, '0')), chapter.title, [
-    element('div', { className: 'chat-stack' }, bubble),
+  setPanel(panel, `${roleConfig.labels.tenureLine.replace('{n}', String(state.index + 1))}　・　${chapterLabel(chapter, String(state.index + 1).padStart(2, '0'))}`, chapter.title, [
+    element('div', { className: 'chat-stack' }, [lead, bubble]),
+    element('span', { className: 'your-reply-label', text: roleConfig.labels.yourReply }),
     replies,
   ]);
 }
@@ -380,7 +506,7 @@ function typeText(target, text) {
 function selectReply(index) {
   const chapter = currentChapter();
   const reply = chapter.chat.replies[index];
-  state.currentResult = { lean: reply.lean, scored: Boolean(chapter.game?.scored), correct: false };
+  state.currentResult = { lean: reply.lean, perf: Number.isFinite(reply.perf) ? reply.perf : reply.lean === 'perf' ? 1 : 0, scored: Boolean(chapter.game?.scored), correct: false };
   state.replyText = String(reply?.text ?? '');
   awardPoints(scoreReply());
   state.optionFocus = 0;
@@ -422,14 +548,31 @@ function renderReply(chapter) {
   ]);
 }
 
-function optionButton(option, index, onChoose) {
-  const buttonNode = element('button', { className: 'button button-option', type: 'button' }, [
+function optionButton(option, index, onChoose, disabled = false) {
+  const lines = (Array.isArray(option.lines) ? option.lines : []).filter((line) => typeof line === 'string' && line.trim().length > 0);
+  const buttonNode = element('button', { className: `button button-option${lines.length ? ' option-paper-card' : ''}`, type: 'button', attrs: { 'aria-pressed': 'false' } }, [
     element('strong', { text: option.title }),
-    ...option.lines.map((line) => element('span', { className: 'option-lines', text: line })),
+    ...lines.flatMap((line, lineIndex) => {
+      if (lineIndex !== 0) return [element('span', { className: 'option-lines option-evidence', text: line })];
+      const match = line.match(/(\d+(?:\.\d+)?\s*[^\d\s]+)/u);
+      if (!match) return [element('span', { className: 'option-lines', text: line })];
+      const label = `${line.slice(0, match.index).trim()} ${line.slice(match.index + match[0].length).trim()}`.trim();
+      return [
+        element('span', { className: 'option-metric', text: match[0] }),
+        label ? element('span', { className: 'option-label', text: label }) : null,
+      ];
+    }),
   ]);
+  buttonNode.disabled = disabled;
+  if (disabled) buttonNode.classList.add('is-eliminated');
   buttonNode.addEventListener('click', () => {
     audio.play('click');
     state.optionFocus = index;
+    buttonNode.setAttribute('aria-pressed', 'true');
+    buttonNode.classList.add('is-selected');
+    if (currentChapter().game?.type === 'pick') {
+      buttonNode.classList.add(index === currentChapter().game.answer ? 'is-correct' : 'is-wrong');
+    }
     onChoose(index);
   });
   return buttonNode;
@@ -439,6 +582,7 @@ function renderGame() {
   const chapter = currentChapter();
   const game = chapter.game;
   if (game.type === 'pick') return renderPick(game);
+  if (game.type === 'multi') return renderMulti(game);
   if (game.type === 'slider') return renderSlider(chapter, game);
   if (game.type === 'swipe') return renderSwipe(game);
   if (game.type === 'stop') return renderStop(chapter, game);
@@ -446,17 +590,81 @@ function renderGame() {
 }
 
 function renderPick(game) {
-  const options = element('div', { className: 'option-grid' }, game.options.map((option, index) =>
-    optionButton(option, index, choosePick)));
-  if (game.options.length === 3) options.classList.add('option-grid-compact');
-  setPanel(panel, chapterLabel(currentChapter(), '小互動'), game.prompt, [
+  const options = element('div', { className: `option-grid pick-options count-${game.options.length}` }, game.options.map((option, index) =>
+    optionButton(option, index, choosePick, Boolean(state.pickAllowed && !state.pickAllowed.includes(index)))));
+  const children = [options, hintButton(), element('p', { className: 'choice-hint keyboard-note', text: '按 1–4 或方向鍵選擇，再按 Enter。' })];
+  const numerals = ['二', '三', '四'];
+  setPanel(panel, `${chapterLabel(currentChapter(), '小互動')}　・　${numerals[game.options.length - 2] ?? game.options.length}選一`, game.prompt, children);
+}
+
+function renderMulti(game) {
+  const selected = new Set(state.multiSelection);
+  const options = element('div', { className: 'multi-options' }, game.options.map((option, index) => {
+    const chosen = selected.has(index);
+    const locked = state.hintLockedIndex === index;
+    const buttonNode = action('', () => { if (!locked) toggleMultiOption(index); }, 'multi-option', { 'aria-pressed': String(chosen), 'aria-label': option.title });
+    buttonNode.append(element('span', { className: 'multi-check', text: chosen ? '✓' : '' }), element('span', { text: option.title }));
+    // Node.append() would print a null child as the word "null".
+    if (locked) buttonNode.append(element('span', { className: 'locked-hint', text: '前輩提示' }));
+    return buttonNode;
+  }));
+  const countText = gamify.multi.countLabel.replace('{n}', String(state.multiSelection.length));
+  setPanel(panel, `${chapterLabel(currentChapter(), '小互動')}　・　${gamify.multi.tag}`, game.prompt, [
     options,
-    element('p', { className: 'choice-hint', text: '可用方向鍵選擇，再按 Enter。' }),
+    hintButton(),
+    element('div', { className: 'multi-submit' }, [
+      element('span', { text: countText, attrs: { 'aria-live': 'polite' } }),
+      action(gamify.multi.confirm, submitMulti, 'primary', { disabled: state.multiSelection.length === 0 }),
+    ]),
+    element('p', { className: 'choice-hint', text: gamify.multi.note }),
   ]);
+}
+
+function toggleMultiOption(index) {
+  if (state.phase !== 'game' || state.hintLockedIndex === index) return;
+  state.multiSelection = state.multiSelection.includes(index)
+    ? state.multiSelection.filter((item) => item !== index)
+    : [...state.multiSelection, index];
+  renderMulti(currentChapter().game);
+}
+
+function hintButton() {
+  const role = roleFor();
+  if (!role.hints || state.hintsLeft <= 0 || state.hintsUsed.includes(state.index)) return null;
+  return action(gamify.hint.button.replace('{n}', String(state.hintsLeft)), useHint, 'hint');
+}
+
+function useHint() {
+  if (state.phase !== 'game' || state.hintsLeft <= 0 || state.hintsUsed.includes(state.index)) return;
+  const game = currentChapter().game;
+  if (game.type === 'pick') {
+    state.pickAllowed = hintPickIndices(game.answer, game.options.length, state.seed ^ state.index);
+    state.hintsLeft -= 1;
+    state.hintsUsed.push(state.index);
+    storeProgress();
+    renderPick(game);
+  } else if (game.type === 'multi') {
+    const answer = hintMultiSelection(game.answers, state.multiSelection);
+    if (answer === null) return;
+    state.multiSelection = [...state.multiSelection, answer];
+    state.hintLockedIndex = answer;
+    state.hintsLeft -= 1;
+    state.hintsUsed.push(state.index);
+    storeProgress();
+    renderMulti(game);
+  } else if (game.type === 'slider') {
+    const range = sliderHintRange(game.min, game.max, game.answer, game.tolerance);
+    state.sliderHint = gamify.hint.slider.replace('{low}', `${range.low}${game.unit}`).replace('{high}', `${range.high}${game.unit}`);
+    state.hintsLeft -= 1;
+    state.hintsUsed.push(state.index);
+    storeProgress();
+    renderSlider(currentChapter(), game);
+  }
 }
 
 function choosePick(index) {
   if (state.phase !== 'game') return;
+  if (state.pickAllowed && !state.pickAllowed.includes(index)) return;
   const game = currentChapter().game;
   const correct = index === game.answer;
   state.currentResult.correct = correct;
@@ -486,8 +694,39 @@ function renderSlider(chapter, game) {
   });
   setPanel(panel, chapterLabel(chapter, '小互動'), game.prompt, [
     element('div', { className: 'range-wrap' }, [output, range]),
+    state.sliderHint ? element('p', { className: 'hint-note', text: state.sliderHint }) : null,
+    hintButton(),
     action('就這個', submitSlider, 'primary'),
   ]);
+}
+
+function submitMulti() {
+  if (state.phase !== 'game' || !state.multiSelection.length) return;
+  const game = currentChapter().game;
+  const answers = new Set(game.answers);
+  const correctCount = state.multiSelection.filter((index) => answers.has(index)).length;
+  const fullCorrect = correctCount === answers.size && state.multiSelection.length === answers.size;
+  const points = applyRoleMultiplier(scoreMultiGame(state.index, {
+    correctCount, answerCount: answers.size, fullCorrect,
+    remainingSeconds: state.timerRemaining, totalSeconds: state.timerTotal,
+    timed: !state.noTimer, timeout: false,
+  }), roleFor().scoreMultiplier);
+  state.miniAwarded = true;
+  stopGameTimer();
+  awardPoints(points, { sound: false });
+  state.lastAward = points;
+  state.currentResult.correct = fullCorrect;
+  state.revealCorrect = fullCorrect;
+  state.revealText = game.reveal;
+  scene?.showMultiResult(game.answers, state.multiSelection);
+  if (fullCorrect) scene?.celebrateCorrect(game.answers);
+  audio.play(fullCorrect ? 'correct' : 'wrong');
+  const feedback = fullCorrect ? gamify.feedback.correct
+    : correctCount > 0 ? `${gamify.multi.partial.replace('{n}', String(correctCount))}。${gamify.feedback.keepPoints}`
+      : `${gamify.feedback.wrong}。${gamify.feedback.keepPoints}`;
+  statusText(status, feedback);
+  state.multiFeedback = feedback;
+  setPhase('reveal');
 }
 
 function submitSlider() {
@@ -679,12 +918,12 @@ function chooseAgent(index) {
 }
 
 function renderReveal() {
-  const title = state.revealCorrect === null ? '互動完成' : state.revealCorrect ? gamify.feedback.correct : state.timerTotal > 0 && state.timerRemaining <= 0 ? gamify.feedback.timeout : gamify.feedback.wrong;
-  const feedbackLine = state.revealCorrect === true ? gamify.feedback.correct : state.revealCorrect === false
-    ? `${state.timerTotal > 0 && state.timerRemaining <= 0 ? gamify.feedback.timeout : gamify.feedback.wrong}。${gamify.feedback.keepPoints}` : '';
-  const note = element('p', { className: `result-note${state.revealCorrect === false ? ' is-wrong' : ''}`, text: [feedbackLine, state.revealText].filter(Boolean).join(' ') });
+  const feedbackLine = state.multiFeedback || (state.revealCorrect === true ? gamify.feedback.correct : state.revealCorrect === false
+    ? `${state.timerTotal > 0 && state.timerRemaining <= 0 ? gamify.feedback.timeout : gamify.feedback.wrong}。${gamify.feedback.keepPoints}` : '');
+  const title = feedbackLine || '互動完成';
+  const note = element('p', { className: `result-note${state.revealCorrect === false ? ' is-wrong' : ''}`, text: state.revealText });
   const children = [];
-  if (state.currentResult.scored) children.push(element('p', { className: 'choice-hint', text: `本次回饋：${state.revealCorrect ? gamify.feedback.correct : gamify.feedback.wrong}。${gamify.feedback.keepPoints}` }));
+  if (state.currentResult.scored) children.push(element('p', { className: 'sr-only', text: `本次回饋：${feedbackLine || gamify.feedback.correct}` }));
   if (currentChapter().game?.type === 'slider') children.push(renderSliderComparison(currentChapter()));
   children.push(note, action('一句帶走', () => setPhase('takeaway'), 'primary'));
   setPanel(panel, chapterLabel(currentChapter(), '小互動'), title, children);
@@ -710,14 +949,21 @@ function renderTakeaway() {
   const chapter = currentChapter();
   ensureChapterRivals(state.index);
   setPanel(panel, chapterLabel(chapter, '一句帶走'), '', [
-    element('p', { className: 'takeaway', text: chapter.takeaway }),
-    element('div', { className: 'book-note' }, [
-      element('strong', { text: '翻書' }),
-      element('span', { text: chapter.book }),
-      element('span', { text: chapter.source }),
+    element('section', { className: 'paper-card closing-card' }, [
+      element('div', { className: 'paper-kicker' }, [element('span', { text: roleConfig.labels.closing.replace('{year}', String(chapter.year)) }), element('span', { className: 'closing-tag', text: roleConfig.labels.takeawayTag })]),
+      element('p', { className: 'takeaway', text: chapter.takeaway }),
+      element('div', { className: 'book-note' }, [
+        element('strong', { text: '翻書' }),
+        element('span', { text: chapter.book }),
+        element('span', { text: chapter.source }),
+      ]),
+    ]),
+    element('div', { className: 'tenure-progress' }, [
+      element('span', { text: roleConfig.labels.tenure.replace('{n}', String(state.index + 1)) }),
+      element('div', {}, Array.from({ length: 10 }, (_, index) => element('span', { className: index <= state.index ? 'is-done' : '' }))),
     ]),
     renderLeaderboard(),
-    action('下一年', nextChapter, 'primary'),
+    action(state.index === 8 ? roleConfig.labels.enterYear.replace('{year}', '快問快答') : roleConfig.labels.enterYear.replace('{year}', String(chapter.year + 1)), nextChapter, 'primary'),
   ]);
 }
 
@@ -803,8 +1049,8 @@ function renderQuickQuestion() {
   beginStage('quick');
   scene?.scanQuickQuestion(state.quickIndex);
   setPanel(panel, `${gamify.quick.title}　${state.quickIndex + 1}／${gamify.quick.questions.length}`, question.q, [
-    element('div', { className: 'option-grid quick-options' }, question.options.map((option, index) => action(`${index + 1}. ${option}`, () => answerQuick(index), 'option'))),
-    element('p', { className: 'choice-hint', text: '按 1、2 或左右方向鍵作答。' }),
+    element('div', { className: `option-grid quick-options count-${question.options.length}` }, question.options.map((option, index) => action(`${index + 1}. ${option}`, () => answerQuick(index), 'option'))),
+    element('p', { className: 'choice-hint', text: `按 1–${question.options.length} 或方向鍵作答。` }),
   ]);
   renderQuickTimer();
 }
@@ -914,26 +1160,37 @@ function renderPersona() {
       element('span', { className: tendency[1], text: `${tendency[0]}　${outcome}` }),
     ]);
   });
-  const card = element('div', { className: 'persona-card' }, [
-    element('p', { className: 'final-rank-line', text: `第 ${place} 名　${gamify.rankLines[place - 1]}　${state.score.toLocaleString('zh-TW')} 分` }),
-    element('p', { className: 'persona-strength', text: persona.strength }),
-    element('p', { className: 'persona-blind', text: persona.blind }),
-    element('div', { className: 'persona-stats' }, [
-      element('strong', { className: 'score', text: `互動正解 ${totals.score} 次` }),
+  const card = element('section', { className: 'paper-card review-paper' }, [
+    element('div', { className: 'paper-kicker' }, [element('span', { text: roleConfig.labels.review }), element('span', { text: roleConfig.labels.reviewNo })]),
+    element('div', { className: 'review-identity' }, [
+      renderAvatarSilhouette('identity-avatar review-avatar'),
       element('div', {}, [
-        axis,
-        element('div', { className: 'axis-labels' }, [element('span', { text: '績效' }), element('span', { text: '品牌' })]),
+        element('span', { className: 'review-role', text: `${roleFor().name}・${state.team}` }),
+        element('h2', { text: persona.name }),
       ]),
     ]),
-    element('p', { className: 'read-note' }, [element('strong', { text: '先讀這篇　' }), persona.read]),
-    element('div', { className: 'review-grid', attrs: { 'aria-label': '十年回顧' } }, reviewCells),
-    renderLeaderboard(),
-    element('div', { className: 'result-actions' }, [
-      action('再玩一次', replay, 'primary'),
-      action('複製結果', copyResult, 'secondary'),
+    element('div', { className: 'review-summary' }, [
+      element('div', {}, [element('span', { text: roleConfig.labels.total }), element('strong', { text: state.score.toLocaleString('zh-TW') })]),
+      element('div', {}, [element('span', { text: roleConfig.labels.rank }), element('strong', { text: `${place}／3` })]),
+      element('div', {}, [element('span', { text: roleConfig.labels.tenureLabel }), element('strong', { text: roleConfig.labels.tenureValue })]),
     ]),
+    element('dl', { className: 'review-traits' }, [
+      element('dt', { text: roleConfig.labels.strength }), element('dd', { text: persona.strength }),
+      element('dt', { text: roleConfig.labels.blind }), element('dd', { text: persona.blind }),
+    ]),
+    element('p', { className: 'read-note' }, [element('strong', { text: '先讀這篇' }), element('span', { text: persona.read })]),
   ]);
-  setPanel(panel, '十年人格卡', persona.name, [card], 'open');
+  const summary = element('div', { className: 'review-side' }, [
+    element('p', { className: 'final-rank-line', text: `${gamify.rankLines[place - 1]}　${state.score.toLocaleString('zh-TW')} 分` }),
+    renderLeaderboard(),
+    element('div', { className: 'persona-stats' }, [
+      element('strong', { className: 'score', text: `互動正解 ${totals.score} 次` }),
+      element('div', {}, [axis, element('div', { className: 'axis-labels' }, [element('span', { text: '績效' }), element('span', { text: '品牌' })])]),
+    ]),
+    element('div', { className: 'review-grid', attrs: { 'aria-label': '十年回顧' } }, reviewCells),
+    element('div', { className: 'result-actions' }, [action(roleConfig.labels.replay, replay, 'primary'), action('複製結果', copyResult, 'secondary')]),
+  ]);
+  setPanel(panel, roleConfig.labels.reviewTitle, '', [element('div', { className: 'review-layout' }, [card, summary])], 'open');
   statusText(status, `你的結果是${persona.name}，識破 ${totals.score} / 7。`);
 }
 
@@ -952,6 +1209,10 @@ function replay() {
   state.index = 0;
   state.results = [];
   state.team = null;
+  state.roleSelection = roleConfig.defaultRole;
+  state.role = roleConfig.defaultRole;
+  state.hintsLeft = roleFor(roleConfig.defaultRole).hints;
+  state.hintsUsed = [];
   state.score = 0;
   state.seed = newSeed();
   state.noTimer = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -963,9 +1224,8 @@ function replay() {
   state.currentResult = null;
   movePhase('intro');
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* Game can restart without storage. */ }
-  scene?.setChapter(content.chapters[0], 0, false);
-  audio.play('flip');
-  render();
+  // A full reload is the only reset that also clears the finale objects left in the 3D scene.
+  window.location.replace(window.location.pathname);
 }
 
 function copyResult() {
@@ -973,13 +1233,19 @@ function copyResult() {
   const totals = getRunTotals(results);
   const persona = content.personas.find((entry) => entry.id === personaId(totals.score, totals.perf));
   const place = currentRanks().findIndex((team) => team.name === state.team) + 1;
-  navigator.clipboard?.writeText(`${state.team}｜${state.score.toLocaleString('zh-TW')} 分｜第 ${place} 名｜${persona.name}｜${persona.strength}`).catch(() => {});
+  navigator.clipboard?.writeText(`${roleFor().name}｜${state.team}｜${state.score.toLocaleString('zh-TW')} 分｜第 ${place} 名｜${persona.name}｜${persona.strength}`).catch(() => {});
 }
 
 function render() {
-  teamScore.hidden = !state.team || ['intro', 'team'].includes(state.phase);
-  if (!teamScore.hidden && !state.scoreAnimating) teamScore.textContent = `${state.team}　${state.score.toLocaleString('zh-TW')} 分`;
+  teamScore.hidden = !state.team || ['intro', 'role', 'team'].includes(state.phase);
+  employeeBadge.hidden = !state.team || ['intro', 'team', 'role'].includes(state.phase);
+  roleMultiplier.hidden = employeeBadge.hidden || roleFor().scoreMultiplier === 1;
+  employeeBadge.textContent = `${'▮'.repeat(roleFor().level)}${'▯'.repeat(roleConfig.maxLevel - roleFor().level)}　${roleFor().name}・${state.team ?? ''}`;
+  if (!roleMultiplier.hidden) roleMultiplier.textContent = `身份 ×${roleFor().scoreMultiplier}`;
+  if (!teamScore.hidden && !state.scoreAnimating) teamScore.textContent = `${state.score.toLocaleString('zh-TW')} 分`;
+  syncLayout();
   if (state.phase === 'intro') return showIntro();
+  if (state.phase === 'role') return renderRoleSelection();
   if (state.phase === 'team') return showTeamSelection();
   if (state.phase === 'warmup') return showWarmup();
   if (state.phase === 'warmup-result') return showWarmupResult();
@@ -993,17 +1259,31 @@ function render() {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
   if (state.phase === 'quick' && !state.quickAnswered) {
-    const answer = ['ArrowLeft', '1'].includes(event.key) ? 0 : ['ArrowRight', '2'].includes(event.key) ? 1 : -1;
+    const answer = event.key === 'ArrowLeft' ? 0 : event.key === 'ArrowRight' ? 1 : /^[1-3]$/.test(event.key) ? Number(event.key) - 1 : -1;
     if (answer >= 0) {
       event.preventDefault();
       answerQuick(answer);
     }
     return;
   }
+  if (state.phase === 'chat' && /^[1-4]$/.test(event.key)) {
+    event.preventDefault();
+    selectReply(Number(event.key) - 1);
+    return;
+  }
   if (state.phase !== 'game') return;
   const game = currentChapter().game;
-  if ((game.type === 'pick' || game.type === 'agent') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+  if (game.type === 'multi' && /^[1-4]$/.test(event.key)) {
+    const buttonNode = panel.querySelectorAll('.multi-option')[Number(event.key) - 1];
+    if (buttonNode && !buttonNode.disabled) { event.preventDefault(); buttonNode.click(); }
+  } else if ((game.type === 'pick' || game.type === 'agent') && /^[1-4]$/.test(event.key)) {
+    event.preventDefault();
+    const index = Number(event.key) - 1;
+    if (game.type === 'pick') choosePick(index);
+    else chooseAgent(index);
+  } else if ((game.type === 'pick' || game.type === 'agent') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
     const options = panel.querySelectorAll('.button-option');
     if (!options.length) return;
     event.preventDefault();
@@ -1031,6 +1311,7 @@ scene = new GameScene(canvas, fallback, {
   onPick: (index) => {
     if (state.phase !== 'game') return;
     if (currentChapter().game.type === 'agent') chooseAgent(index);
+    else if (currentChapter().game.type === 'multi') toggleMultiOption(index);
     else choosePick(index);
   },
   onSwipe: (direction) => answerSwipe(direction),

@@ -19,13 +19,63 @@ export function stopIsCorrect(tick, goodUntilTick) {
 
 export function getRunTotals(results) {
   return results.reduce((totals, result) => {
-    if (result.lean === 'perf') totals.perf += 1;
+    if (result.lean === 'perf') totals.perf += Number.isFinite(result.perf) ? result.perf : 1;
     if (result.scored) {
       totals.scored += 1;
       if (result.correct) totals.score += 1;
     }
     return totals;
   }, { score: 0, scored: 0, perf: 0 });
+}
+
+export function timerSecondsForRole(tierSeconds, timerDelta, minSeconds) {
+  return Math.max(minSeconds, tierSeconds + timerDelta);
+}
+
+export function applyRoleMultiplier(points, multiplier = 1) {
+  return Math.max(0, Math.round(points * multiplier));
+}
+
+export function scoreMultiGame(chapterIndex, { correctCount = 0, answerCount = 0, fullCorrect = false, remainingSeconds = 0, totalSeconds = 0, timed = true, timeout = false } = {}) {
+  const tier = chapterTier(chapterIndex);
+  if (!tier) return 0;
+  let points = scoring.participate * tier;
+  if (!timeout && answerCount > 0) {
+    points += Math.round(scoring.correct * tier * Math.max(0, Math.min(correctCount, answerCount)) / answerCount);
+  }
+  if (!timeout && fullCorrect && timed && totalSeconds > 0) {
+    const remaining = Math.max(0, Math.min(totalSeconds, remainingSeconds));
+    points += Math.round(scoring.speedMax * tier * remaining / totalSeconds);
+  }
+  return points;
+}
+
+export function hintPickIndices(answer, optionCount, seed = 0) {
+  if (!Number.isInteger(answer) || answer < 0 || answer >= optionCount || optionCount < 2) return [];
+  let other = Math.abs(Math.trunc(seed)) % optionCount;
+  if (other === answer) other = (other + 1) % optionCount;
+  return [answer, other].sort((a, b) => a - b);
+}
+
+export function hintMultiSelection(answers, selected = []) {
+  const current = new Set(selected);
+  return answers.find((answer) => !current.has(answer)) ?? null;
+}
+
+export function sliderHintRange(min, max, answer, tolerance) {
+  return { low: Math.max(min, answer - 2 * tolerance), high: Math.min(max, answer + 2 * tolerance) };
+}
+
+export function desktopCameraDistance({ width, height, panelWidth = 440, headerHeight = 56, stageWidth = 7, stageHeight = 4, fov = 38 } = {}) {
+  const safeWidth = Math.max(1, width - panelWidth);
+  const safeHeight = Math.max(1, height - headerHeight);
+  const visibleWidthRatio = safeWidth / Math.max(width, 1);
+  const visibleHeightRatio = safeHeight / Math.max(height, 1);
+  const halfVerticalFov = (fov * Math.PI) / 360;
+  const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * (width / Math.max(height, 1)));
+  const horizontal = (stageWidth / 2) / (Math.tan(halfHorizontalFov) * visibleWidthRatio * 0.9);
+  const vertical = (stageHeight / 2) / (Math.tan(halfVerticalFov) * visibleHeightRatio * 0.84);
+  return Math.max(15, horizontal, vertical);
 }
 import gamify from './gamify-content.js';
 

@@ -1,0 +1,71 @@
+// 身份（職級）層的文字與數值。身份只改視角與節奏，不改題目。
+// 文字不要改；數值只在測試不過時才可調整並回報。
+
+export default {
+  defaultRole: "staff",
+  prompt: "你今天以什麼身份進公司？",
+  roleStep: "報到 1／2",
+  teamStep: "報到 2／2",
+
+  roles: [
+    { id: "intern", name: "實習生", code: "INTERN · L1", level: 1,
+      job: "整理報表、做會議紀錄", who: "帶你的前輩", power: "提醒大家哪個數字怪怪的",
+      pace: "每題多 5 秒，有 2 次提示",
+      line: "「這兩份報告你幫我看一下，哪份怪怪的？」",
+      timerDelta: 5, hints: 2, scoreMultiplier: 1,
+      contact: "帶你的前輩", avatar: "前", lead: "{from}剛問了這個。你先想，等等換我問你。" },
+    { id: "staff", name: "職員", code: "STAFF · L2", level: 2,
+      job: "執行投放、寫結案報告", who: "直屬主管", power: "這一季的預算怎麼分",
+      pace: "標準時間，沒有提示",
+      line: "「下一季怎麼投？明天給我。」",
+      timerDelta: 0, hints: 0, scoreMultiplier: 1,
+      contact: "主管", avatar: "主", lead: "@你 {from}這題交給你。" },
+    { id: "manager", name: "經理", code: "MANAGER · L3", level: 3,
+      job: "帶一個小組、對客戶報告", who: "總監和客戶", power: "小組要對哪個數字負責",
+      pace: "每題少 3 秒",
+      line: "「你的組這季要交什麼數字？」",
+      timerDelta: -3, hints: 0, scoreMultiplier: 1,
+      contact: "總監", avatar: "總", lead: "{from}在問。你的組怎麼看？" },
+    { id: "director", name: "總監", code: "DIRECTOR · L4", level: 4,
+      job: "簽字決定整年預算", who: "執行長和財務長", power: "整年的錢放哪裡",
+      pace: "每題少 5 秒，分數 ×1.2",
+      line: "「董事會下週要看。你決定。」",
+      timerDelta: -5, hints: 0, scoreMultiplier: 1.2,
+      contact: "執行長", avatar: "執", lead: "{from}在等答案。這個你簽。" }
+  ],
+
+  minTimerSeconds: 6,
+  maxLevel: 4,
+
+  labels: {
+    notice: "到職通知",
+    noticeNo: "NO. 2018-001",
+    joinYear: "到職年份",
+    level: "職級",
+    dept: "部門",
+    pending: "待選",
+    getBadge: "領識別證",
+    next: "下一步：選部門",
+    who: "誰會找你",
+    power: "你能決定",
+    pace: "節奏",
+    yourReply: "你的回覆",
+    tenureLine: "入職第 {n} 年",
+    closing: "{year} 年度結案",
+    takeawayTag: "一句帶走",
+    tenure: "年資 {n}／10",
+    enterYear: "進入 {year}",
+    review: "考績表",
+    reviewNo: "NO. 2027-010",
+    reviewTitle: "2018 — 2027・十年考績",
+    strength: "強項",
+    blind: "盲點",
+    total: "總分",
+    rank: "名次",
+    tenureLabel: "年資",
+    tenureValue: "10 年",
+    replay: "換個身份再玩一次",
+    you: "（你）",
+    seconds: "秒"
+  }
+};

@@ -27,7 +27,7 @@ export default defineConfig({
   base: './',
   plugins: [usePublicDecoders],
   build: {
-    chunkSizeWarningLimit: 800,
+    chunkSizeWarningLimit: 850,
     rolldownOptions: {
       output: {
         hashCharacters: 'hex',

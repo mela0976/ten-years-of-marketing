@@ -1,11 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import gamify from './gamify-content.js';
-import { chapterTier, getRunTotals, maxChapterScore, maxRunScore, maxMiniGameScore, personaId, rankTeams, rivalChapterAward, rivalQuickAward, scoreMiniGame, scoreQuick, scoreReply, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect } from './logic.js';
+import { applyRoleMultiplier, chapterTier, desktopCameraDistance, getRunTotals, hintMultiSelection, hintPickIndices, maxChapterScore, maxRunScore, maxMiniGameScore, personaId, rankTeams, rivalChapterAward, rivalQuickAward, scoreMiniGame, scoreMultiGame, scoreQuick, scoreReply, sliderHintRange, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect, timerSecondsForRole } from './logic.js';
 import * as THREE from 'three';
 import content from './content.js';
+import roleConfig from './role-content.js';
 import { GameScene } from './scene/game-scene.js';
 import { createStageGuard } from './stage-guard.js';
+import { normalizeText } from './ui.js';
+
+test('DOM text normalization omits null, undefined, and blank values', () => {
+  assert.equal(normalizeText(null), null);
+  assert.equal(normalizeText(undefined), null);
+  assert.equal(normalizeText('   '), null);
+  assert.equal(normalizeText(0), '0');
+  assert.equal(normalizeText('文字'), '文字');
+});
 
 test('stage guard ignores a second completion callback from the same interaction', () => {
   const guard = createStageGuard('mini-game');
@@ -120,6 +130,70 @@ test('run totals count only scored games and performance replies', () => {
     { lean: 'brand', scored: true, correct: false },
     { lean: 'perf', scored: false, correct: true },
   ]), { score: 1, scored: 2, perf: 2 });
+});
+
+test('performance reply weights sum as fractions and legacy replies still count as one', () => {
+  assert.equal(getRunTotals([
+    { lean: 'perf', perf: 1 },
+    { lean: 'perf', perf: 0.7 },
+    { lean: 'perf', perf: 0.3 },
+    { lean: 'perf', perf: 0 },
+    { lean: 'perf' },
+    { lean: 'brand', perf: 1 },
+  ]).perf, 3);
+});
+
+test('role timing and score multiplier affect only the supplied mini-game values', () => {
+  const tiers = [...new Set(gamify.scoring.tierByChapter)];
+  assert.equal(tiers.length, 3);
+  for (const role of roleConfig.roles) {
+    for (const tier of tiers) {
+      const expected = Math.max(roleConfig.minTimerSeconds, gamify.scoring.timerSecondsByTier[tier] + role.timerDelta);
+      assert.equal(timerSecondsForRole(gamify.scoring.timerSecondsByTier[tier], role.timerDelta, roleConfig.minTimerSeconds), expected, `${role.id}, tier ${tier}`);
+      assert.ok(timerSecondsForRole(gamify.scoring.timerSecondsByTier[tier], role.timerDelta, roleConfig.minTimerSeconds) >= roleConfig.minTimerSeconds);
+    }
+  }
+  assert.equal(applyRoleMultiplier(1000, 1.2), 1200);
+  const replyPoints = scoreReply();
+  const quickPoints = scoreQuick(true);
+  assert.equal(replyPoints, 1000);
+  assert.equal(quickPoints, 5000);
+});
+
+test('multi-choice scoring awards proportional correct points, completion points, and speed only for a full match', () => {
+  const tier = chapterTier(6);
+  const base = gamify.scoring.participate * tier;
+  assert.equal(scoreMultiGame(6, { correctCount: 3, answerCount: 3, fullCorrect: true, remainingSeconds: 12, totalSeconds: 12 }), base + gamify.scoring.correct * tier + gamify.scoring.speedMax * tier);
+  assert.equal(scoreMultiGame(6, { correctCount: 2, answerCount: 3, fullCorrect: false, remainingSeconds: 12, totalSeconds: 12 }), base + Math.round(gamify.scoring.correct * tier * 2 / 3));
+  assert.equal(scoreMultiGame(6, { correctCount: 0, answerCount: 3, fullCorrect: false }), base);
+  assert.equal(scoreMultiGame(6, { correctCount: 3, answerCount: 3, fullCorrect: true, timeout: true, timed: true, totalSeconds: 12 }), base);
+  assert.ok(applyRoleMultiplier(scoreMultiGame(6, { correctCount: 99, answerCount: 3, fullCorrect: true }), 1.2) <= maxMiniGameScore(6) * 1.2);
+});
+
+test('identity hints retain a correct choice and slider interval contains the answer', () => {
+  const pick = hintPickIndices(2, 4, 3);
+  assert.equal(pick.length, 2);
+  assert.ok(pick.includes(2));
+  assert.equal(pick.filter((index) => index === 2).length, 1);
+  assert.equal(hintMultiSelection([0, 1, 2], [1]), 0);
+  assert.equal(hintMultiSelection([0, 1], [1, 0]), null);
+  for (const [min, max, answer, tolerance] of [[1, 10, 5, 1], [0, 100, 65, 10], [0, 100, 81, 10]]) {
+    const range = sliderHintRange(min, max, answer, tolerance);
+    assert.ok(range.low >= min && range.low <= answer);
+    assert.ok(range.high <= max && range.high >= answer);
+  }
+});
+
+test('desktop camera distance fits the stage inside the unobstructed content area', () => {
+  for (const [width, height] of [[1280, 800], [1920, 1080], [1000, 700]]) {
+    const distance = desktopCameraDistance({ width, height });
+    const vfov = 38 * Math.PI / 180;
+    const visibleHeightRatio = (height - 56) / height;
+    const visibleWidthRatio = (width - 440) / width;
+    const horizontalFov = 2 * Math.atan(Math.tan(vfov / 2) * width / height);
+    assert.ok(2 * distance * Math.tan(vfov / 2) * visibleHeightRatio * 0.84 >= 4, `${width}x${height} stage height`);
+    assert.ok(2 * distance * Math.tan(horizontalFov / 2) * visibleWidthRatio * 0.9 >= 7, `${width}x${height} stage width`);
+  }
 });
 
 test('points follow tier, correctness, completion, timer, and unscored-game rules', () => {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { desktopCameraDistance } from '../logic.js';
 
 const GREEN = 0x1f6f5c;
 const GREEN_LIGHT = 0x79bda0;
@@ -241,12 +242,17 @@ export class GameScene {
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
     const narrow = width / height < 0.78;
+    const desktop = width >= 1000;
     const target = new THREE.Vector3(0, 1.9, this.getStageZ());
-    this.camera.position.set(0, narrow ? 3.6 : 3.0, target.z + (narrow ? 24 : 15));
+    const distance = desktop ? desktopCameraDistance({ width, height }) : (narrow ? 24 : 15);
+    this.camera.position.set(0, narrow ? 3.6 : 3.0, target.z + distance);
     this.camera.clearViewOffset();
-    const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
-    const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
-    this.camera.setViewOffset(width, height, 0, (height - visibleTop) / 2 - 28, width, height);
+    if (desktop) this.camera.setViewOffset(width, height, 220, -28, width, height);
+    else {
+      const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
+      const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
+      this.camera.setViewOffset(width, height, 0, (height - visibleTop) / 2 - 28, width, height);
+    }
     this.cameraTarget = target;
     this.camera.lookAt(target);
   }
@@ -256,13 +262,18 @@ export class GameScene {
     const chapterCode = this.chapterCode;
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
-    const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
-    const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
     this.camera.clearViewOffset();
-    this.camera.setViewOffset(width, height, 0, (height - visibleTop) / 2 - 28, width, height);
+    const desktop = width >= 1000;
+    if (desktop) this.camera.setViewOffset(width, height, 220, -28, width, height);
+    else {
+      const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
+      const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
+      this.camera.setViewOffset(width, height, 0, (height - visibleTop) / 2 - 28, width, height);
+    }
     const narrow = window.innerWidth / Math.max(window.innerHeight, 1) < 0.78;
     const target = new THREE.Vector3(0, 1.9, -index * 24);
-    const position = new THREE.Vector3(0, narrow ? 3.6 : 3.0, target.z + (narrow ? 24 : 15));
+    const distance = desktop ? desktopCameraDistance({ width, height }) : (narrow ? 24 : 15);
+    const position = new THREE.Vector3(0, narrow ? 3.6 : 3.0, target.z + distance);
     if (!animate || this.reducedMotion) {
       if (animate && this.reducedMotion && this.fade) {
         this.fade.classList.add('is-visible');
@@ -310,7 +321,7 @@ export class GameScene {
     this.finalCard = null;
     this.stopTick = 0;
     if (!this.renderer) return;
-    if (chapter.game?.type === 'pick') this.createPickStage(chapter);
+    if (chapter.game?.type === 'pick' || chapter.game?.type === 'multi') this.createPickStage(chapter);
     else if (chapter.game?.type === 'slider') this.createSliderStage(chapter);
     else if (chapter.game?.type === 'swipe') this.createSwipeStage(chapter);
     else if (chapter.game?.type === 'stop') this.createStopStage(chapter);
@@ -364,31 +375,33 @@ export class GameScene {
     const count = options.length;
     this.pickVisuals = [];
     options.forEach((option, index) => {
-      const x = (index - (count - 1) / 2) * (count === 2 ? 3.4 : 2.2);
-      const model = this.models.get(chapter.year === 2024 ? 'figure' : 'tablet');
+      const gap = count === 2 ? 3.4 : count === 3 ? 2.2 : 1.7;
+      const x = (index - (count - 1) / 2) * gap;
+      const model = this.models.get('tablet');
       let visual;
       if (model) {
         visual = this.cloneModel(model, 0x64756d);
         const box = new THREE.Box3().setFromObject(visual);
         const size = box.getSize(new THREE.Vector3());
-      const targetHeight = chapter.year === 2024 ? 2.2 : 2.6;
+        const targetHeight = 2.6;
         visual.scale.setScalar(targetHeight / Math.max(size.y, 0.01));
-        visual.position.set(x, 0.12 - box.min.y * visual.scale.y, this.getStageZ());
+        visual.position.set(x, 0.12 - box.min.y * visual.scale.y, this.getStageZ() + 0.04);
         this.stageObjects.add(visual);
       } else {
-        const height = chapter.year === 2024 ? 2.2 : 2.6;
-        visual = new THREE.Mesh(new THREE.BoxGeometry(chapter.year === 2024 ? 0.72 : 1.8, height, 0.16), material(0x52655f));
+        const height = 2.6;
+        visual = new THREE.Mesh(new THREE.BoxGeometry(1.35, height, 0.16), material(0x52655f));
         visual.position.set(x, 0.12 + height / 2, this.getStageZ());
         this.stageObjects.add(visual);
       }
-      const label = new THREE.Mesh(new THREE.PlaneGeometry(chapter.year === 2024 ? 2.0 : 2.8, chapter.year === 2024 ? 0.77 : 1.08),
+      const labelWidth = count === 4 ? 1.45 : count === 3 ? 1.85 : 2.35;
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(labelWidth, 0.76),
         new THREE.MeshBasicMaterial({ map: createLabelTexture(option.title, []), toneMapped: false, side: THREE.DoubleSide }));
-      label.position.set(x, chapter.year === 2024 ? 3.62 : 1.82, this.getStageZ() + 0.34);
+      label.position.set(x, 2.22, this.getStageZ() + 0.34);
       this.stageObjects.add(label);
       this.pickVisuals.push({ visual, label });
-      this.makeHitbox(chapter.year === 2024 ? 1.8 : 2.3, 3.4, x, 1.9, 0.45, 'pick', index);
+      this.makeHitbox(Math.min(1.6, gap - 0.08), 3.4, x, 1.9, 0.45, 'pick', index);
     });
-    if (chapter.year === 2024) {
+    if (chapter.year === 2024 && chapter.game.type === 'pick') {
       const whistle = new THREE.Group();
       const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.54, 8), material(PAPER));
       tube.rotation.z = Math.PI / 2;
@@ -422,8 +435,12 @@ export class GameScene {
     }
   }
 
-  celebrateCorrect() {
+  celebrateCorrect(indices = null) {
     const year = this.currentChapter?.year;
+    if (Array.isArray(indices)) {
+      for (const index of indices) this.bounceTarget(this.pickVisuals?.[index]?.visual);
+      return;
+    }
     let target;
     if (year === 2018 || year === 2024) target = this.pickVisuals?.[this.currentChapter.game.answer]?.visual;
     else if (year === 2019) target = this.monthMeshes?.[Math.round(this.currentChapter.game.answer) - 1];
@@ -431,6 +448,10 @@ export class GameScene {
     else if (year === 2022) target = this.people;
     else if (year === 2023) target = this.swipeCard;
     else if (year === 2025) target = this.reportColumn;
+    this.bounceTarget(target);
+  }
+
+  bounceTarget(target) {
     if (!target) return;
     const base = target.scale.clone();
     const duration = this.reducedMotion ? 100 : 420;
@@ -441,6 +462,20 @@ export class GameScene {
         target.scale.set(base.x * bounce, base.y * bounce, base.z * bounce);
       },
     });
+  }
+
+  showMultiResult(answers, selected) {
+    const correct = new Set(answers);
+    const picked = new Set(selected);
+    this.pickVisuals?.forEach(({ visual }, index) => {
+      const tint = correct.has(index) ? GREEN_LIGHT : picked.has(index) ? RED : 0x53615e;
+      visual.traverse((part) => { if (part.isMesh) part.material.color.setHex(tint); });
+    });
+    for (const hitbox of this.interactive) {
+      if (hitbox.userData.kind !== 'pick') continue;
+      hitbox.material.color.setHex(correct.has(hitbox.userData.index) ? GREEN : picked.has(hitbox.userData.index) ? RED : 0x344047);
+      hitbox.material.opacity = 0.22;
+    }
   }
 
   createSliderStage(chapter) {

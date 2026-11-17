@@ -5,22 +5,32 @@ const content = {
     {
       year: 2018, title: "不再是賭注", book: "2018 決策智慧",
       chat: { from: "老闆", text: "新的歸因工具上線了，以後每塊錢都算得出來。下一季怎麼投？",
-        replies: [ { text: "全投算得出來的", lean: "perf" }, { text: "留一塊給算不出來的", lean: "brand" } ] },
+        replies: [
+          { text: "全投算得出來的", lean: "perf", perf: 1 },
+          { text: "七成算得出來，三成給品牌", lean: "perf", perf: 0.7 },
+          { text: "一半一半，先做對照", lean: "brand", perf: 0.3 },
+          { text: "留一塊給算不出來的", lean: "brand", perf: 0 } ] },
       game: { type: "pick", scored: true,
         prompt: "哪一份結案報告，生意真的變大了？",
         options: [
           { title: "報告 A", lines: ["廣告報酬率 8 倍", "購買者九成是老客"] },
-          { title: "報告 B", lines: ["廣告報酬率 3 倍", "購買者四成是新客"] }
+          { title: "報告 B", lines: ["廣告報酬率 3 倍", "購買者四成是新客"] },
+          { title: "報告 C", lines: ["廣告報酬率 6 倍", "多半來自再行銷"] },
+          { title: "報告 D", lines: ["廣告報酬率 4 倍", "只算促銷那一週"] }
         ],
         answer: 1,
-        reveal: "A 的錢多半花在本來就會買的人身上。老闆會誇 A，生意變大的是 B。" },
+        reveal: "A 的錢多半花在本來就會買的人身上，C 和 D 也是同一種漂亮。生意變大的是 B。" },
       takeaway: "報表漂亮，不等於生意變大。",
       source: "〈未來沒有結案報告〉"
     },
     {
       year: 2019, title: "無限賽局", book: "2019 決策智慧",
       chat: { from: "老闆", text: "客戶想把投放收回去自己做。我們教不教？",
-        replies: [ { text: "不教，守住發稿量", lean: "perf" }, { text: "教，改當他們的顧問", lean: "brand" } ] },
+        replies: [
+          { text: "不教，守住發稿量", lean: "perf", perf: 1 },
+          { text: "教一點，核心留著", lean: "perf", perf: 0.7 },
+          { text: "教，但要簽長約", lean: "brand", perf: 0.3 },
+          { text: "教，改當他們的顧問", lean: "brand", perf: 0 } ] },
       game: { type: "slider", scored: true,
         prompt: "那家被當成轉型典範的銀行，光是打底就花了幾年？",
         min: 1, max: 10, step: 1, start: 2, unit: "年", answer: 5, tolerance: 1,
@@ -31,7 +41,11 @@ const content = {
     {
       year: 2020, title: "下半場", book: "2020 決策智慧",
       chat: { from: "老闆", text: "疫情，預算砍半。剩下的錢怎麼分？",
-        replies: [ { text: "全留給成效廣告", lean: "perf" }, { text: "一半以上留給品牌", lean: "brand" } ] },
+        replies: [
+          { text: "全留給成效廣告", lean: "perf", perf: 1 },
+          { text: "成效七成，品牌三成", lean: "perf", perf: 0.7 },
+          { text: "一半一半", lean: "brand", perf: 0.3 },
+          { text: "一半以上留給品牌", lean: "brand", perf: 0 } ] },
       game: { type: "slider", scored: true,
         prompt: "一家運動品牌把 77% 預算放成效廣告。後來發現，多少銷售其實來自品牌活動？",
         min: 0, max: 100, step: 5, start: 25, unit: "%", answer: 65, tolerance: 10,
@@ -42,7 +56,11 @@ const content = {
     {
       year: 2021, title: "穿越 2030", book: "2021 決策智慧",
       chat: { from: "平台業務", text: "追蹤工具快沒了。要不要買我們的方案，把每個人重新認出來？",
-        replies: [ { text: "買，受眾不能丟", lean: "perf" }, { text: "不買，只用顧客自願給的", lean: "brand" } ] },
+        replies: [
+          { text: "買，受眾不能丟", lean: "perf", perf: 1 },
+          { text: "先買一季試試", lean: "perf", perf: 0.7 },
+          { text: "不買，先整理自己的會員資料", lean: "brand", perf: 0.3 },
+          { text: "不買，只用顧客自願給的", lean: "brand", perf: 0 } ] },
       game: { type: "swipe", scored: false,
         prompt: "換你當消費者。這些視窗，你會按允許嗎？",
         left: "拒絕", right: "允許",
@@ -60,7 +78,11 @@ const content = {
     {
       year: 2022, title: "複合躍進", book: "2022 決策智慧",
       chat: { from: "老闆", text: "大家都在做永續宣告，我們也發一篇？",
-        replies: [ { text: "發，先佔位再說", lean: "perf" }, { text: "先做到一件事再發", lean: "brand" } ] },
+        replies: [
+          { text: "發，先佔位再說", lean: "perf", perf: 1 },
+          { text: "發，但只講方向不講數字", lean: "perf", perf: 0.7 },
+          { text: "先盤點再決定", lean: "brand", perf: 0.3 },
+          { text: "先做到一件事再發", lean: "brand", perf: 0 } ] },
       game: { type: "slider", scored: true,
         prompt: "台灣消費者中，多少人覺得「省錢比救地球重要」？",
         min: 0, max: 100, step: 5, start: 40, unit: "%", answer: 81, tolerance: 10,
@@ -71,7 +93,11 @@ const content = {
     {
       year: 2023, title: "賦能進化", book: "2023 決策智慧",
       chat: { from: "客戶", text: "AI 可以做十倍素材，製作費砍一半可以吧？",
-        replies: [ { text: "可以，全交給 AI", lean: "perf" }, { text: "AI 打草稿，定稿留給人", lean: "brand" } ] },
+        replies: [
+          { text: "可以，全交給 AI", lean: "perf", perf: 1 },
+          { text: "可以，人只做最後檢查", lean: "perf", perf: 0.7 },
+          { text: "砍三成，重點素材還是人做", lean: "brand", perf: 0.3 },
+          { text: "AI 打草稿，定稿留給人", lean: "brand", perf: 0 } ] },
       game: { type: "swipe", scored: true,
         prompt: "這句文案，是人寫的還是 AI 寫的？",
         left: "人寫的", right: "AI 寫的",
@@ -89,23 +115,32 @@ const content = {
     {
       year: 2024, title: "毒蘋果", book: "2024 決策智慧",
       chat: { from: "成長長", text: "通路的廣告平台能從曝光追到結帳，數字超乾淨。品牌預算轉過去？",
-        replies: [ { text: "全轉，終於算得清楚", lean: "perf" }, { text: "先試一點，自己做對照", lean: "brand" } ] },
-      game: { type: "pick", scored: true,
-        prompt: "在通路的廣告平台上，「這筆訂單是廣告的功勞」由誰判定？",
+        replies: [
+          { text: "全轉，終於算得清楚", lean: "perf", perf: 1 },
+          { text: "轉一半，看數字再加", lean: "perf", perf: 0.7 },
+          { text: "只轉促銷預算", lean: "brand", perf: 0.3 },
+          { text: "先試一點，自己做對照", lean: "brand", perf: 0 } ] },
+      game: { type: "multi", scored: true,
+        prompt: "通路的廣告平台，手上握著哪些東西？",
         options: [
-          { title: "品牌自己", lines: [] },
-          { title: "通路平台", lines: [] },
-          { title: "獨立第三方", lines: [] }
+          { title: "上架權", lines: [] },
+          { title: "你的顧客資料", lines: [] },
+          { title: "廣告版位", lines: [] },
+          { title: "獨立第三方的驗證", lines: [] }
         ],
-        answer: 1,
-        reveal: "通路平台。賣你廣告的人，同時替廣告打分數，也握著你的顧客資料。" },
+        answers: [0, 1, 2],
+        reveal: "前三樣都在它手上。第四樣不在，要你自己去找。年鑑的提醒：通路能力愈大，品牌要付的代價愈大。" },
       takeaway: "小心球員兼裁判。",
       source: "〈RMN 來了：台灣行銷市場的特效藥或毒蘋果？〉"
     },
     {
       year: 2025, title: "自動打仗", book: "2025 決策智慧",
       chat: { from: "平台業務", text: "開自動優化吧，讓 AI 自己打仗，人工調只會拖慢它。",
-        replies: [ { text: "開，目標設報酬率", lean: "perf" }, { text: "開，但目標改成新客", lean: "brand" } ] },
+        replies: [
+          { text: "開，目標設報酬率", lean: "perf", perf: 1 },
+          { text: "開，每週看一次報表", lean: "perf", perf: 0.7 },
+          { text: "開，但留一組不投的對照", lean: "brand", perf: 0.3 },
+          { text: "開，但目標改成新客", lean: "brand", perf: 0 } ] },
       game: { type: "stop", scored: true,
         prompt: "自動優化開始跑了。你覺得該停的時候，按下去。",
         ticks: 12, intervalMs: 700,
@@ -121,7 +156,11 @@ const content = {
     {
       year: 2026, title: "真實距離", book: "2026 決策智慧",
       chat: { from: "老闆", text: "現在大家叫 AI 幫忙挑東西。我們要先讓 AI 看見，還是先讓人記得？",
-        replies: [ { text: "先讓 AI 看見", lean: "perf" }, { text: "先讓人記得", lean: "brand" } ] },
+        replies: [
+          { text: "先讓 AI 看見", lean: "perf", perf: 1 },
+          { text: "AI 為主，品牌廣告留一點", lean: "perf", perf: 0.7 },
+          { text: "兩邊各半", lean: "brand", perf: 0.3 },
+          { text: "先讓人記得", lean: "brand", perf: 0 } ] },
       game: { type: "agent", scored: false,
         prompt: "口渴了。你會拿哪一瓶？",
         options: [
@@ -138,7 +177,11 @@ const content = {
     {
       year: 2027, title: "衡斷", book: "終章", finale: true,
       chat: { from: "財務長", text: "那台讓報表漂亮了十年的自動引擎，被發現對某些客人定比較高的價。關不關？",
-        replies: [ { text: "不關，數字不能掉", lean: "perf" }, { text: "關，這個不能交給機器", lean: "brand" } ] },
+        replies: [
+          { text: "不關，數字不能掉", lean: "perf", perf: 1 },
+          { text: "不關，先悄悄調參數", lean: "perf", perf: 0.7 },
+          { text: "先暫停，查清楚再說", lean: "brand", perf: 0.3 },
+          { text: "關，這個不能交給機器", lean: "brand", perf: 0 } ] },
       takeaway: "十年前相信數據能取代判斷。十年後的結論是：判斷不能外包。",
       source: "2026〈AI 普及下的演算法世代，「衡斷力 (Judgment)」將成為最稀缺的競爭力〉"
     }

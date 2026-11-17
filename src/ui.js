@@ -1,7 +1,14 @@
+export function normalizeText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value);
+  return text.trim() ? text : null;
+}
+
 export function element(tag, options = {}, children = []) {
   const node = document.createElement(tag);
   if (options.className) node.className = options.className;
-  if (options.text !== undefined && options.text !== null) node.textContent = options.text;
+  const text = normalizeText(options.text);
+  if (text !== null) node.textContent = text;
   if (options.type) node.type = options.type;
   if (options.value !== undefined && options.value !== null) node.value = options.value;
   if (options.min !== undefined && options.min !== null) node.min = options.min;
@@ -15,7 +22,10 @@ export function element(tag, options = {}, children = []) {
   if (options.onClick) node.addEventListener('click', options.onClick);
   for (const child of Array.isArray(children) ? children : [children]) {
     if (child instanceof Node) node.append(child);
-    else if (child !== null && child !== undefined) node.append(document.createTextNode(String(child)));
+    else {
+      const childText = normalizeText(child);
+      if (childText !== null) node.append(document.createTextNode(childText));
+    }
   }
   return node;
 }
@@ -39,7 +49,7 @@ export function updateProgress(progress, chapterIndex, started) {
     const year = 2018 + index;
     const step = element('span', {
       className: `progress-step${index === chapterIndex ? ' is-current' : ''}${index < chapterIndex ? ' is-done' : ''}`,
-      text: String(year).slice(2),
+      text: String(year),
       attrs: { role: 'listitem', 'aria-current': index === chapterIndex ? 'step' : undefined, 'aria-label': String(year), title: String(year) },
     });
     progress.append(step);
