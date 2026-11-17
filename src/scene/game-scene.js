@@ -65,6 +65,9 @@ export class GameScene {
     this.tweens = [];
     this.currentIndex = 0;
     this.currentChapter = null;
+    this.squadMode = false;
+    this.squadDuties = [];
+    this.squadFigures = [];
     this.chapterCode = 0;
     this.gameType = null;
     this.sliderValue = 0;
@@ -218,6 +221,7 @@ export class GameScene {
       child.material = child.material.clone();
       child.material.color.setHex(tint);
       child.material.roughness = 0.94;
+      child.material.needsUpdate = true;
       child.castShadow = false;
       child.receiveShadow = false;
     });
@@ -244,10 +248,11 @@ export class GameScene {
     const narrow = width / height < 0.78;
     const desktop = width >= 1000;
     const target = new THREE.Vector3(0, 1.9, this.getStageZ());
-    const distance = desktop ? desktopCameraDistance({ width, height }) : (narrow ? 24 : 15);
+    const panelWidth = desktop ? this.panel?.getBoundingClientRect().width ?? 440 : 440;
+    const distance = desktop ? desktopCameraDistance({ width, height, panelWidth }) : (narrow ? 24 : 15);
     this.camera.position.set(0, narrow ? 3.6 : 3.0, target.z + distance);
     this.camera.clearViewOffset();
-    if (desktop) this.camera.setViewOffset(width, height, 220, -28, width, height);
+    if (desktop) this.camera.setViewOffset(width, height, panelWidth / 2, -28, width, height);
     else {
       const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
       const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
@@ -264,7 +269,8 @@ export class GameScene {
     const height = Math.max(1, window.innerHeight);
     this.camera.clearViewOffset();
     const desktop = width >= 1000;
-    if (desktop) this.camera.setViewOffset(width, height, 220, -28, width, height);
+    const panelWidth = desktop ? this.panel?.getBoundingClientRect().width ?? 440 : 440;
+    if (desktop) this.camera.setViewOffset(width, height, panelWidth / 2, -28, width, height);
     else {
       const panelTop = this.panel?.getBoundingClientRect().top ?? height * 0.5;
       const visibleTop = THREE.MathUtils.clamp(panelTop / height, 0.4, 0.62) * height;
@@ -272,7 +278,7 @@ export class GameScene {
     }
     const narrow = window.innerWidth / Math.max(window.innerHeight, 1) < 0.78;
     const target = new THREE.Vector3(0, 1.9, -index * 24);
-    const distance = desktop ? desktopCameraDistance({ width, height }) : (narrow ? 24 : 15);
+    const distance = desktop ? desktopCameraDistance({ width, height, panelWidth }) : (narrow ? 24 : 15);
     const position = new THREE.Vector3(0, narrow ? 3.6 : 3.0, target.z + distance);
     if (!animate || this.reducedMotion) {
       if (animate && this.reducedMotion && this.fade) {
@@ -327,7 +333,44 @@ export class GameScene {
     else if (chapter.game?.type === 'stop') this.createStopStage(chapter);
     else if (chapter.game?.type === 'agent') this.createAgentStage(chapter);
     else this.createFinalStage(chapter);
+    if (this.squadMode) this.createSquadFigures();
     this.moveToChapter(index, animate);
+  }
+
+  setSquadMode(enabled, duties = []) {
+    this.squadMode = Boolean(enabled);
+    this.squadDuties = duties;
+    if (this.currentChapter) this.setChapter(this.currentChapter, this.currentIndex, false);
+  }
+
+  createSquadFigures() {
+    this.squadFigures = [];
+    const model = this.models.get('figure');
+    const positions = [-3, -1, 1, 3];
+    positions.forEach((x, index) => {
+      let figure;
+      if (model) figure = this.cloneModel(model, Number.parseInt((this.squadDuties[index]?.color ?? '#789087').slice(1), 16));
+      else {
+        figure = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.6, 3, 6), material(Number.parseInt((this.squadDuties[index]?.color ?? '#789087').slice(1), 16)));
+        body.position.y = 0.55;
+        figure.add(body);
+      }
+      const bounds = new THREE.Box3().setFromObject(figure);
+      const size = bounds.getSize(new THREE.Vector3());
+      const scale = Math.min(0.9 / Math.max(size.y, 0.01), 0.58 / Math.max(size.x, 0.01));
+      figure.scale.multiplyScalar(scale);
+      const scaledBounds = new THREE.Box3().setFromObject(figure);
+      figure.position.set(x, -scaledBounds.min.y + 0.04, this.getStageZ() + 3.2);
+      figure.userData.squadSeat = index;
+      this.stageObjects.add(figure);
+      this.squadFigures.push(figure);
+    });
+  }
+
+  bounceSquadPlayer(index) {
+    if (this.reducedMotion) return;
+    this.bounceTarget(this.squadFigures[index]);
   }
 
   scanQuickQuestion(questionIndex) {
@@ -395,7 +438,7 @@ export class GameScene {
       }
       const labelWidth = count === 4 ? 1.45 : count === 3 ? 1.85 : 2.35;
       const label = new THREE.Mesh(new THREE.PlaneGeometry(labelWidth, 0.76),
-        new THREE.MeshBasicMaterial({ map: createLabelTexture(option.title, []), toneMapped: false, side: THREE.DoubleSide }));
+        new THREE.MeshBasicMaterial({ map: createLabelTexture(option.title, option.lines ?? []), toneMapped: false, side: THREE.DoubleSide }));
       label.position.set(x, 2.22, this.getStageZ() + 0.34);
       this.stageObjects.add(label);
       this.pickVisuals.push({ visual, label });
@@ -452,7 +495,7 @@ export class GameScene {
   }
 
   bounceTarget(target) {
-    if (!target) return;
+    if (!target || this.reducedMotion) return;
     const base = target.scale.clone();
     const duration = this.reducedMotion ? 100 : 420;
     this.tweens.push({

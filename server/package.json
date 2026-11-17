@@ -1,0 +1,6 @@
+{
+  "name": "decision-intelligence-server",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node index.mjs", "test": "node --test server.test.mjs" }
+}

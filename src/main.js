@@ -7,6 +7,10 @@ import { GameScene } from './scene/game-scene.js';
 import { createStageGuard } from './stage-guard.js';
 import { applyRoleMultiplier, desktopCameraDistance, getRunTotals, hintMultiSelection, hintPickIndices, maxChapterScore, personaId, rankTeams, rivalChapterAward, rivalQuickAward, scoreMiniGame, scoreMultiGame, scoreQuick, scoreReply, sliderHintRange, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect, timerSecondsForRole } from './logic.js';
 import { button, element, setPanel, statusText, updateProgress } from './ui.js';
+import squadContent from './squad-content.js';
+import { createRoom as createSquadRoom, applyAction as applySquadAction } from './squad-logic.js';
+import { checkSquadServer, clearSquadSession, createRemoteRoom, joinRemoteRoom, createSquadClient, readSquadSession } from './squad-client.js';
+import { renderModeChoice, renderSquadScreen } from './squad-ui.js';
 
 const STORAGE_KEY = 'decision-ten-years-progress';
 const panel = document.querySelector('#panel');
@@ -24,7 +28,7 @@ const shortcut = new URLSearchParams(window.location.search);
 const shortcutChapter = Number(shortcut.get('c'));
 const hasChapterShortcut = Number.isInteger(shortcutChapter) && shortcutChapter >= 1 && shortcutChapter <= 10;
 const shortcutIndex = hasChapterShortcut ? shortcutChapter - 1 : null;
-const shortcutToGame = hasChapterShortcut && shortcut.get('g') === '1' && shortcutIndex < 9;
+const shortcutToGame = !shortcut.get('room') && shortcut.get('squad') !== 'local' && hasChapterShortcut && shortcut.get('g') === '1' && shortcutIndex < 9;
 const validRoleIds = roleConfig.roles.map((role) => role.id);
 const queryRole = shortcut.get('role');
 const initialRole = validRoleIds.includes(queryRole) ? queryRole : roleConfig.defaultRole;
@@ -69,7 +73,7 @@ const saved = restoredProgress();
 const state = {
   index: shortcutIndex ?? saved.index,
   results: hasChapterShortcut ? [] : saved.results,
-  phase: shortcutToGame ? 'game' : hasChapterShortcut ? 'chat' : saved.started ? 'chat' : 'intro',
+  phase: shortcutToGame ? 'game' : hasChapterShortcut ? 'chat' : shortcut.get('room') ? 'squad' : saved.started ? 'chat' : 'intro',
   currentResult: shortcutToGame ? { lean: 'brand', scored: Boolean(content.chapters[shortcutIndex].game?.scored), correct: null } : null,
   team: hasChapterShortcut ? gamify.teams[0] : saved.team,
   role: hasChapterShortcut ? initialRole : saved.role,
@@ -110,11 +114,19 @@ const state = {
   stopTimer: null,
   revealText: '',
   revealCorrect: null,
+  squadMode: Boolean(shortcut.get('room')),
 };
 const stageGuard = createStageGuard(state.phase);
 state.stageCode = stageGuard.stageCode;
 
 let scene;
+let squadClient = null;
+let squadRoom = null;
+let squadSeat = 0;
+let squadOffline = false;
+let squadError = '';
+let squadStatus = '';
+let squadDefaults = { roomCode: shortcut.get('room') ?? '', roomInvite: Boolean(shortcut.get('room')) };
 
 function currentChapter() { return content.chapters[state.index]; }
 
@@ -223,7 +235,7 @@ function showIntro() {
     best === null ? null : element('p', { className: 'choice-hint best-score', text: `最佳 ${best.toLocaleString('zh-TW')}` }),
     element('ul', { className: 'rules-list' }, gamify.rules.map((rule) => element('li', { text: rule }))),
     element('div', { className: 'intro-actions' }, [
-      action(roleConfig.labels.getBadge, () => { audio.start(); audio.play('flip'); movePhase('role'); render(); }, 'primary'),
+      action(roleConfig.labels.getBadge, () => { audio.start(); audio.play('flip'); movePhase('mode'); render(); }, 'primary'),
       timerToggle,
     ]),
   ], 'open');
@@ -253,6 +265,92 @@ function showTeamSelection() {
       render();
     }, 'option'))),
   ], 'open');
+}
+
+function enterSoloMode() {
+  state.squadMode = false;
+  movePhase('role');
+  render();
+}
+
+function closeSquadClient() {
+  squadClient?.close();
+  squadClient = null;
+  squadRoom = null;
+}
+
+function installSquadClient(options) {
+  closeSquadClient();
+  squadSeat = options.seat ?? 0;
+  squadClient = createSquadClient({ ...options, onStatus: (value) => { options.onStatus?.(value); squadStatus = value; if (value === 'reconnecting') statusText(status, squadContent.labels.reconnecting); render(); } });
+  squadClient.subscribe((room) => {
+    const previous = squadRoom;
+    squadRoom = room;
+    state.score = room.score;
+    state.team = room.teamName;
+    teamScore.hidden = false;
+    teamScore.textContent = `${room.score.toLocaleString('zh-TW')} 分`;
+    updateProgress(progress, Math.min(room.chapter, 9), room.phase !== 'lobby');
+    if (!scene?.squadMode) scene?.setSquadMode(true, squadContent.duties);
+    if (room.phase !== 'lobby' && (previous?.chapter !== room.chapter || scene?.currentIndex !== room.chapter)) scene?.setChapter(content.chapters[Math.min(room.chapter, 9)], Math.min(room.chapter, 9), false);
+    if (previous && room.phase === 'discuss') {
+      for (const index of Object.keys(room.votes)) if (previous.votes[index] !== room.votes[index]) scene?.bounceSquadPlayer(Number(index));
+    }
+    if (previous && room.phase === 'game') {
+      for (const index of Object.keys(room.answers)) if (!Object.hasOwn(previous.answers, index)) scene?.bounceSquadPlayer(Number(index));
+    }
+    render();
+  });
+  render();
+}
+
+function squadCallbacks() {
+  return {
+    status: (message) => statusText(status, message),
+    enter: async (input) => {
+      squadError = '';
+      try {
+        if (input.mode === 'local' || squadOffline) {
+          let room = createSquadRoom({ seed: newSeed(), teamName: input.teamName, noTimer: input.noTimer, hostName: input.name, hostDuty: input.duty });
+          if (squadOffline || input.mode === 'local') room = applySquadAction(room, { type: 'start', seat: 0 }, Date.now());
+          installSquadClient({ mode: 'local', room, seat: 0, onStatus: (value) => { squadStatus = value; } });
+          if (squadOffline) statusText(status, squadContent.labels.offline);
+          return;
+        }
+        const details = input.mode === 'create'
+          ? await createRemoteRoom({ name: input.name, duty: input.duty, teamName: input.teamName, noTimer: input.noTimer })
+          : await joinRemoteRoom(input.code, { name: input.name, duty: input.duty });
+        installSquadClient({ mode: 'remote', code: details.code ?? input.code, token: details.token, seat: details.seat, initialState: details.state, onStatus: (value) => { squadStatus = value; if (value === 'reconnecting') statusText(status, squadContent.labels.reconnecting); } });
+      } catch (error) { squadError = error.message; render(); }
+    },
+    restart: () => { if (squadClient) squadClient.send({ type: 'restart' }); },
+    leave: () => { closeSquadClient(); clearSquadSession(); state.squadMode = false; scene?.setSquadMode(false); state.phase = 'mode'; render(); },
+  };
+}
+
+async function enterSquadMode() {
+  state.squadMode = true;
+  state.phase = 'squad';
+  squadError = '';
+  const health = await checkSquadServer(2000);
+  squadOffline = !health;
+  if (!health) {
+    let room = createSquadRoom({ seed: newSeed(), hostName: '你', hostDuty: 'data' });
+    room = applySquadAction(room, { type: 'start', seat: 0 }, Date.now());
+    installSquadClient({ mode: 'local', room, seat: 0 });
+    statusText(status, squadContent.labels.offline);
+    return;
+  }
+  const session = readSquadSession();
+  const invited = shortcut.get('room');
+  // A reload, or reopening the invite link, returns the player to the seat they already hold.
+  if (session?.code && session?.token && (!invited || invited.toUpperCase() === session.code)) {
+    squadDefaults.roomCode = session.code;
+    installSquadClient({ mode: 'remote', code: session.code, token: session.token, seat: session.seat });
+    squadClient?.send({ type: 'rejoin' }).catch(() => { closeSquadClient(); clearSquadSession(); squadError = '無法回到原座位，請重新加入。'; render(); });
+    return;
+  }
+  render();
 }
 
 function renderIdentityCard(role, compact = false) {
@@ -1244,6 +1342,14 @@ function render() {
   if (!roleMultiplier.hidden) roleMultiplier.textContent = `身份 ×${roleFor().scoreMultiplier}`;
   if (!teamScore.hidden && !state.scoreAnimating) teamScore.textContent = `${state.score.toLocaleString('zh-TW')} 分`;
   syncLayout();
+  if (state.phase === 'mode') return renderModeChoice(panel, enterSoloMode, enterSquadMode);
+  if (state.squadMode) {
+    teamScore.hidden = !squadRoom;
+    employeeBadge.hidden = true;
+    roleMultiplier.hidden = true;
+    progress.hidden = !squadRoom || squadRoom.phase === 'lobby';
+    return renderSquadScreen({ panel, room: squadRoom, seat: squadSeat, client: squadClient, callbacks: squadCallbacks(), error: squadError, entryDefaults: squadDefaults, status, connectionText: squadOffline ? squadContent.labels.offline : squadStatus === 'reconnecting' ? squadContent.labels.reconnecting : '' });
+  }
   if (state.phase === 'intro') return showIntro();
   if (state.phase === 'role') return renderRoleSelection();
   if (state.phase === 'team') return showTeamSelection();
@@ -1324,3 +1430,15 @@ if (shortcut.get('debug') === '1') {
 }
 render();
 if (shortcutToGame) startGameTimer();
+if (shortcut.get('room') || (!hasChapterShortcut && shortcut.get('squad') !== 'local' && readSquadSession()?.token)) enterSquadMode();
+if (shortcut.get('squad') === 'local') {
+  state.squadMode = true;
+  state.phase = 'squad';
+  const requestedChapter = Number(shortcut.get('c'));
+  const chapterIndex = Number.isInteger(requestedChapter) ? Math.max(0, Math.min(9, requestedChapter - 1)) : 0;
+  let room = createSquadRoom({ seed: newSeed(), hostName: '你', hostDuty: 'data' });
+  room = applySquadAction(room, { type: 'start', seat: 0 }, Date.now());
+  room.chapter = chapterIndex;
+  room.captainSeat = chapterIndex % 4;
+  installSquadClient({ mode: 'local', room, seat: 0 });
+}

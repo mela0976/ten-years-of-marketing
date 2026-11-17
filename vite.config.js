@@ -27,11 +27,14 @@ export default defineConfig({
   base: './',
   plugins: [usePublicDecoders],
   build: {
-    chunkSizeWarningLimit: 850,
+    chunkSizeWarningLimit: 900,
     rolldownOptions: {
       output: {
         hashCharacters: 'hex',
       },
     },
+  },
+  server: {
+    proxy: { '/api': 'http://localhost:8787' },
   },
 });
