@@ -24,7 +24,7 @@ const content = {
       game: { type: "slider", scored: true,
         prompt: "那家被當成轉型典範的銀行，光是打底就花了幾年？",
         min: 1, max: 10, step: 1, start: 2, unit: "年", answer: 5, tolerance: 1,
-        reveal: "五年。它先花五年把技術收回自己手上，外包占比從 85% 降到 15%。" },
+        reveal: "五年。它先花五年把技術收回自己手上，技術外包成本占比從 85% 降到 15%。" },
       takeaway: "典範花了五年，董事會只給你一季。",
       source: "〈從星展銀行 DBS 看數位轉型的成功關鍵〉"
     },
@@ -52,10 +52,10 @@ const content = {
           "手機遊戲想追蹤你在其他 App 的活動",
           "外送平台想知道你的精確位置，即使沒在使用"
         ],
-        revealByCount: "你拒絕了 {n} 個。年鑑裡寫，年輕人有一半每個月清一次追蹤紀錄，一半裝了廣告封鎖。",
+        revealByCount: "你拒絕了 {n} 個。年鑑裡寫，Z 世代有一半每個月清一次 cookie，一半用廣告封鎖軟體。",
         countSide: "left" },
       takeaway: "你自己也不想被追蹤。",
-      source: "〈身分識別新革命〉、2019〈掌握 Z 世代意向〉"
+      source: "〈身分識別新革命〉、2019〈掌握 Z 世代意向 成為未來消費市場的贏家〉"
     },
     {
       year: 2022, title: "複合躍進", book: "2022 決策智慧",
@@ -66,7 +66,7 @@ const content = {
         min: 0, max: 100, step: 5, start: 40, unit: "%", answer: 81, tolerance: 10,
         reveal: "81%。同一份調查裡，85% 認為環保產品比較貴。" },
       takeaway: "說支持，和願意付錢，是兩回事。",
-      source: "〈永續轉型－掌握趨勢開創新局〉"
+      source: "〈永續轉型 – 掌握趨勢，開創新局〉"
     },
     {
       year: 2023, title: "賦能進化", book: "2023 決策智慧",
@@ -100,7 +100,7 @@ const content = {
         answer: 1,
         reveal: "通路平台。賣你廣告的人，同時替廣告打分數，也握著你的顧客資料。" },
       takeaway: "小心球員兼裁判。",
-      source: "〈RMN 來了：台灣行銷市場的特效藥 或 毒蘋果？〉"
+      source: "〈RMN 來了：台灣行銷市場的特效藥或毒蘋果？〉"
     },
     {
       year: 2025, title: "自動打仗", book: "2025 決策智慧",
@@ -140,7 +140,7 @@ const content = {
       chat: { from: "財務長", text: "那台讓報表漂亮了十年的自動引擎，被發現對某些客人定比較高的價。關不關？",
         replies: [ { text: "不關，數字不能掉", lean: "perf" }, { text: "關，這個不能交給機器", lean: "brand" } ] },
       takeaway: "十年前相信數據能取代判斷。十年後的結論是：判斷不能外包。",
-      source: "2026〈AI 普及下的演算法世代，「衡斷力」將成為最稀缺的競爭力〉"
+      source: "2026〈AI 普及下的演算法世代，「衡斷力 (Judgment)」將成為最稀缺的競爭力〉"
     }
   ],
   personas: [
