@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "hero-head",
+      "file": "hero-head.webp",
+      "width": 266,
+      "height": 338
+    },
+    {
+      "id": "hero-torso",
+      "file": "hero-torso.webp",
+      "width": 218,
+      "height": 495
+    },
+    {
+      "id": "hero-pack",
+      "file": "hero-pack.webp",
+      "width": 208,
+      "height": 325
+    },
+    {
+      "id": "hero-uarm",
+      "file": "hero-uarm.webp",
+      "width": 117,
+      "height": 415
+    },
+    {
+      "id": "hero-farm",
+      "file": "hero-farm.webp",
+      "width": 113,
+      "height": 438
+    },
+    {
+      "id": "hero-thigh",
+      "file": "hero-thigh.webp",
+      "width": 141,
+      "height": 421
+    },
+    {
+      "id": "hero-shin",
+      "file": "hero-shin.webp",
+      "width": 220,
+      "height": 488
+    },
+    {
+      "id": "hero-farm-book",
+      "file": "hero-farm-book.webp",
+      "width": 258,
+      "height": 343
+    },
+    {
+      "id": "bird-head",
+      "file": "bird-head.webp",
+      "width": 369,
+      "height": 342
+    },
+    {
+      "id": "bird-body",
+      "file": "bird-body.webp",
+      "width": 503,
+      "height": 400
+    },
+    {
+      "id": "bird-uleg",
+      "file": "bird-uleg.webp",
+      "width": 88,
+      "height": 312
+    },
+    {
+      "id": "bird-lleg",
+      "file": "bird-lleg.webp",
+      "width": 209,
+      "height": 363
+    }
+  ]
+}

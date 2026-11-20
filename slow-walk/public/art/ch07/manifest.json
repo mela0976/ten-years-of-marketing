@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 150
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 150
+    },
+    {
+      "id": "apple-tree",
+      "file": "apple-tree.webp",
+      "width": 304,
+      "height": 348
+    },
+    {
+      "id": "market",
+      "file": "market.webp",
+      "width": 292,
+      "height": 310
+    },
+    {
+      "id": "signs",
+      "file": "signs.webp",
+      "width": 356,
+      "height": 268
+    },
+    {
+      "id": "truck",
+      "file": "truck.webp",
+      "width": 457,
+      "height": 286
+    },
+    {
+      "id": "branch",
+      "file": "branch.webp",
+      "width": 215,
+      "height": 270
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 209,
+      "height": 763
+    }
+  ]
+}

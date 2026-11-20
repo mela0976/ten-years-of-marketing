@@ -31,6 +31,15 @@ jobs:
         run: npm ci
       - name: Build site
         run: npm run build
+      # 《十年，慢慢走》：獨立的 Vite 專案，建置後放到站台的 slow-walk/ 子路徑。
+      - name: Build slow-walk
+        run: |
+          diff slow-walk/content/content.js src/content.js
+          npm ci --prefix slow-walk
+          npm test --prefix slow-walk
+          npm run build --prefix slow-walk
+          npm run check --prefix slow-walk
+          cp -R slow-walk/dist dist/slow-walk
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

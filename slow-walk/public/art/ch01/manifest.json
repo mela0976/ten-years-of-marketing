@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 146
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 146
+    },
+    {
+      "id": "apt-a",
+      "file": "apt-a.webp",
+      "width": 353,
+      "height": 661
+    },
+    {
+      "id": "apt-b",
+      "file": "apt-b.webp",
+      "width": 371,
+      "height": 788
+    },
+    {
+      "id": "tree-a",
+      "file": "tree-a.webp",
+      "width": 490,
+      "height": 608
+    },
+    {
+      "id": "tree-b",
+      "file": "tree-b.webp",
+      "width": 353,
+      "height": 604
+    },
+    {
+      "id": "scooter",
+      "file": "scooter.webp",
+      "width": 402,
+      "height": 318
+    },
+    {
+      "id": "shop",
+      "file": "shop.webp",
+      "width": 534,
+      "height": 847
+    },
+    {
+      "id": "pots",
+      "file": "pots.webp",
+      "width": 249,
+      "height": 347
+    },
+    {
+      "id": "board",
+      "file": "board.webp",
+      "width": 398,
+      "height": 447
+    },
+    {
+      "id": "bus-stop",
+      "file": "bus-stop.webp",
+      "width": 158,
+      "height": 574
+    },
+    {
+      "id": "bus",
+      "file": "bus.webp",
+      "width": 885,
+      "height": 351
+    },
+    {
+      "id": "pillar",
+      "file": "pillar.webp",
+      "width": 147,
+      "height": 479
+    },
+    {
+      "id": "monstera",
+      "file": "monstera.webp",
+      "width": 295,
+      "height": 360
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 243,
+      "height": 760
+    }
+  ]
+}

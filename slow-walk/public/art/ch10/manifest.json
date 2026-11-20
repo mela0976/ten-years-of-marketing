@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 142
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 142
+    },
+    {
+      "id": "banyan",
+      "file": "banyan.webp",
+      "width": 370,
+      "height": 333
+    },
+    {
+      "id": "laundry",
+      "file": "laundry.webp",
+      "width": 277,
+      "height": 225
+    },
+    {
+      "id": "signpost",
+      "file": "signpost.webp",
+      "width": 129,
+      "height": 247
+    },
+    {
+      "id": "house",
+      "file": "house.webp",
+      "width": 469,
+      "height": 308
+    },
+    {
+      "id": "wall",
+      "file": "wall.webp",
+      "width": 365,
+      "height": 222
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 140
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 140
+    },
+    {
+      "id": "bus-cutaway",
+      "file": "bus-cutaway.webp",
+      "width": 1024,
+      "height": 383
+    },
+    {
+      "id": "tunnel",
+      "file": "tunnel.webp",
+      "width": 423,
+      "height": 330
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 221,
+      "height": 735
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 140
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 140
+    },
+    {
+      "id": "car-cutaway",
+      "file": "car-cutaway.webp",
+      "width": 1024,
+      "height": 343
+    },
+    {
+      "id": "platform-pillar",
+      "file": "platform-pillar.webp",
+      "width": 210,
+      "height": 339
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 243,
+      "height": 760
+    }
+  ]
+}

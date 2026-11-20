@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 134
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 134
+    },
+    {
+      "id": "tetrapods",
+      "file": "tetrapods.webp",
+      "width": 271,
+      "height": 172
+    },
+    {
+      "id": "shelter",
+      "file": "shelter.webp",
+      "width": 338,
+      "height": 273
+    },
+    {
+      "id": "gauge",
+      "file": "gauge.webp",
+      "width": 61,
+      "height": 332
+    },
+    {
+      "id": "train",
+      "file": "train.webp",
+      "width": 546,
+      "height": 336
+    },
+    {
+      "id": "rocks",
+      "file": "rocks.webp",
+      "width": 347,
+      "height": 233
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 243,
+      "height": 760
+    }
+  ]
+}

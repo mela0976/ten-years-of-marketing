@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 144
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 144
+    },
+    {
+      "id": "grass",
+      "file": "grass.webp",
+      "width": 304,
+      "height": 398
+    },
+    {
+      "id": "bench",
+      "file": "bench.webp",
+      "width": 391,
+      "height": 261
+    },
+    {
+      "id": "gauge",
+      "file": "gauge.webp",
+      "width": 62,
+      "height": 472
+    },
+    {
+      "id": "bike",
+      "file": "bike.webp",
+      "width": 520,
+      "height": 365
+    },
+    {
+      "id": "grass-dark",
+      "file": "grass-dark.webp",
+      "width": 277,
+      "height": 344
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 243,
+      "height": 760
+    }
+  ]
+}

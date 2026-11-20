@@ -1,0 +1,12 @@
+{
+  "id": "black-crowned-night-heron",
+  "strideLength": 60,
+  "parts": [
+    { "id": "legFar", "parent": null, "pivot": [-2, 52], "offset": [0, -10], "shape": "capsule", "size": [7, 25], "color": "#b6774c", "joint": "legFar", "asset": "bird-uleg", "tint": "#b8b8b0" },
+    { "id": "shinFar", "parent": "legFar", "pivot": [0, -20], "offset": [4, -15], "shape": "capsule", "size": [19, 33], "color": "#c2a04f", "joint": "shinFar", "asset": "bird-lleg", "tint": "#b8b8b0" },
+    { "id": "legNear", "parent": null, "pivot": [6, 52], "offset": [0, -10], "shape": "capsule", "size": [7, 25], "color": "#c2864f", "joint": "legNear", "asset": "bird-uleg" },
+    { "id": "shinNear", "parent": "legNear", "pivot": [0, -20], "offset": [4, -15], "shape": "capsule", "size": [19, 33], "color": "#c2a04f", "joint": "shinNear", "asset": "bird-lleg" },
+    { "id": "body", "parent": null, "pivot": [0, 0], "offset": [-6, 72], "shape": "ellipse", "size": [68, 54], "color": "#8a5a3a", "asset": "bird-body" },
+    { "id": "head", "parent": null, "pivot": [0, 0], "offset": [30, 104], "shape": "ellipse", "size": [54, 50], "color": "#a8683c", "asset": "bird-head" }
+  ]
+}

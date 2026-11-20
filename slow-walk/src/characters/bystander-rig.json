@@ -1,0 +1,6 @@
+{
+  "id": "taiwanese-neighbor",
+  "parts": [
+    { "id": "body", "parent": null, "pivot": [0, 0], "offset": [0, 103], "shape": "roundRect", "size": [64, 206], "color": "#887b68", "asset": "bystander" }
+  ]
+}

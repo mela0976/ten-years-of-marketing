@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 136
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 136
+    },
+    {
+      "id": "teahouse",
+      "file": "teahouse.webp",
+      "width": 498,
+      "height": 397
+    },
+    {
+      "id": "stall",
+      "file": "stall.webp",
+      "width": 319,
+      "height": 302
+    },
+    {
+      "id": "notice",
+      "file": "notice.webp",
+      "width": 197,
+      "height": 268
+    },
+    {
+      "id": "steps",
+      "file": "steps.webp",
+      "width": 308,
+      "height": 252
+    },
+    {
+      "id": "eave",
+      "file": "eave.webp",
+      "width": 237,
+      "height": 235
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 221,
+      "height": 735
+    }
+  ]
+}

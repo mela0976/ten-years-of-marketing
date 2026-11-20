@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "background",
+      "file": "background.webp",
+      "width": 1672,
+      "height": 941
+    },
+    {
+      "id": "ground-a",
+      "file": "ground-a.webp",
+      "width": 826,
+      "height": 144
+    },
+    {
+      "id": "ground-b",
+      "file": "ground-b.webp",
+      "width": 826,
+      "height": 144
+    },
+    {
+      "id": "food-stall",
+      "file": "food-stall.webp",
+      "width": 491,
+      "height": 362
+    },
+    {
+      "id": "crossing",
+      "file": "crossing.webp",
+      "width": 249,
+      "height": 333
+    },
+    {
+      "id": "lantern-b",
+      "file": "lantern-b.webp",
+      "width": 177,
+      "height": 222
+    },
+    {
+      "id": "lantern-a",
+      "file": "lantern-a.webp",
+      "width": 260,
+      "height": 261
+    },
+    {
+      "id": "crowd",
+      "file": "crowd.webp",
+      "width": 408,
+      "height": 117
+    },
+    {
+      "id": "bystander",
+      "file": "bystander.webp",
+      "width": 241,
+      "height": 733
+    }
+  ]
+}
