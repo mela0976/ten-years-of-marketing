@@ -76,7 +76,7 @@ export class AudioManager {
   setMuted(muted) {
     this.muted = Boolean(muted);
     safeWriteMuted(this.muted);
-    if (this.master && this.context) ramp(this.master.gain, this.muted ? 0 : 0.24, this.context, 0.18);
+    if (this.master && this.context) ramp(this.master, this.muted ? 0 : 0.24, this.context, 0.18);
     return this.muted;
   }
 

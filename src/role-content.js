@@ -40,6 +40,7 @@ export default {
   labels: {
     notice: "到職通知",
     noticeNo: "NO. 2018-001",
+    slowWalk: "十年，慢慢走",
     joinYear: "到職年份",
     level: "職級",
     dept: "部門",

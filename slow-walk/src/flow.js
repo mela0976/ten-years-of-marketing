@@ -1,4 +1,5 @@
 import content from '../content/content.js';
+import roadside from '../content/roadside.js';
 
 const START_X = 640;
 const LAST_CHAPTER = content.chapters.length;
@@ -44,13 +45,16 @@ export function createProgress(raw) {
     const chapter = Number(key);
     if (!isChapter(chapter) || key !== String(chapter) || !isRecord(result)) return emptyProgress();
 
-    const { lean, perf, correct, input } = result;
+    const { lean, perf, correct, input, quiz } = result;
     const scored = chapterContent(chapter).game?.scored === true;
     const validCorrect = scored ? typeof correct === 'boolean' : correct === null;
     if ((lean !== 'perf' && lean !== 'brand') || !Number.isFinite(perf) || !validCorrect
-      || !isRecord(input) || !validReply(input.reply, chapter)) return emptyProgress();
+      || !isRecord(input) || !validReply(input.reply, chapter)
+      || (quiz !== undefined && typeof quiz !== 'boolean')) return emptyProgress();
 
     results[key] = { lean, perf, correct, input: { ...input } };
+    // 舊存檔沒有小問成績時保留缺值，不把未作答誤認成答錯。
+    if (typeof quiz === 'boolean') results[key].quiz = quiz;
   }
 
   return { v: 1, resume: raw.resume, farthest: raw.farthest, results, done: raw.done, muted: raw.muted };
@@ -74,6 +78,15 @@ function enter(state, phase, changes = {}, effect = null) {
 
 function enterChapter(state, chapter) {
   return enter(state, 'card', { chapter, x: START_X, pending: null, menuOpen: false });
+}
+
+// 同一段 walk2 分成小問前後兩段，答錯也視為已完成停靠。
+export function getWalkTarget(state, stops) {
+  if (state.phase === 'walk1') return { stopAt: stops.chat, next: 'chat' };
+  if (typeof state.pending?.quiz !== 'boolean') return { stopAt: stops.quiz, next: 'quiz' };
+  return chapterContent(state.chapter).game
+    ? { stopAt: stops.interaction, next: 'game' }
+    : { stopAt: stops.takeaway, next: 'takeaway' };
 }
 
 export function transitionFlow(state, action) {
@@ -110,7 +123,7 @@ export function transitionFlow(state, action) {
       return state.phase === 'card' ? enter(state, 'walk1') : unchanged;
     case 'MOVE': {
       const { delta, stopAt, next } = action;
-      const afterWalk = chapter.game ? 'game' : 'takeaway';
+      const afterWalk = typeof state.pending?.quiz !== 'boolean' ? 'quiz' : chapter.game ? 'game' : 'takeaway';
       const validNext = (state.phase === 'walk1' && next === 'chat') || (state.phase === 'walk2' && next === afterWalk);
       if (!validNext || !Number.isFinite(delta) || delta <= 0 || !Number.isFinite(stopAt) || stopAt < state.x) return unchanged;
 
@@ -124,6 +137,15 @@ export function transitionFlow(state, action) {
       const pending = { lean, perf, correct: null, input: { reply: index } };
       return enter(state, 'walk2', { pending });
     }
+    case 'QUIZ_RESULT': {
+      const question = roadside[state.chapter - 1];
+      if (state.phase !== 'quiz' || !state.pending || typeof state.pending.quiz === 'boolean'
+        || !Number.isInteger(action.index) || action.index < 0 || action.index >= question.options.length) return unchanged;
+      // 小問的正誤獨立保存；原小互動與人格用的 correct、perf 完全不動。
+      return enter(state, 'quiz', { pending: { ...state.pending, quiz: action.index === question.answer } });
+    }
+    case 'CONTINUE_QUIZ':
+      return state.phase === 'quiz' && typeof state.pending?.quiz === 'boolean' ? enter(state, 'walk2') : unchanged;
     case 'GAME_RESULT': {
       if (state.phase !== 'game' || !chapter.game || !state.pending || !isRecord(action.input)) return unchanged;
       if (chapter.game.scored && typeof action.correct !== 'boolean') return unchanged;

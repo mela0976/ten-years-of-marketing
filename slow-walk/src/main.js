@@ -1,10 +1,15 @@
 import content from '../content/content.js';
 import { chapters as chapterArt } from './chapters/index.js';
 import { getRunTotals, multiIsCorrect, personaId, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect } from './logic.js';
-import { createFlowState, createProgress, transitionFlow } from './flow.js';
+// 路上小問：只接流程與內容掛勾，沿用既有面板。
+import { createFlowState, createProgress, getWalkTarget, transitionFlow } from './flow.js';
+import { renderQuiz } from './quiz.js';
 import { AudioManager } from './audio.js';
 import { StageRenderer } from './stage.js';
+import { createGuide } from './guide.js';
 import './style.css';
+// 全螢幕舞台與閱讀面板共用的版面樣式，集中在既有元件樣式之後。
+import './viewport.css';
 
 const PROGRESS_KEY = 'getting-there-progress-v1';
 const WALK_SPEED = 80;
@@ -16,7 +21,7 @@ const FOOTSTEP_DISTANCE = 36;
 const ui = Object.fromEntries([
   'title-screen', 'intro-text', 'start-button', 'game-screen', 'stage-frame', 'stage-host', 'stage-fallback',
   'chapter-year', 'chapter-title', 'progress', 'mute-button', 'menu-button', 'scene-caption', 'world-prompt',
-  'story-content', 'hint', 'movement-controls', 'walk-button', 'chapter-menu', 'close-menu', 'chapter-list',
+  'story-panel', 'story-content', 'hint', 'chapter-menu', 'close-menu', 'chapter-list',
 ].map((id) => [id, document.getElementById(id)]));
 
 function readSavedProgress() {
@@ -77,11 +82,20 @@ function currentArt() {
 let saved = readSavedProgress();
 let audio = new AudioManager(saved.muted);
 let flow = createFlowState({ ...saved, muted: audio.muted });
-const stage = new StageRenderer(ui['stage-host'], ui['stage-fallback']);
+const stage = new StageRenderer(ui['stage-host'], ui['stage-fallback'], ui['story-panel']);
+// 引導自行管理顯示與設定，沿用既有章節選擇和移動流程。
+const guide = createGuide({
+  frame: ui['stage-frame'], menu: ui['chapter-menu'], chapterList: ui['chapter-list'], hint: ui.hint, stage,
+  replay: () => {
+    dispatch({ type: 'SELECT_CHAPTER', chapter: 1 });
+    ui['chapter-menu'].close();
+  },
+});
 let activeStageChapter = null;
 let heldPointerId = null;
 const heldKeys = new Set();
 let moving = false;
+let manualStartX = null;
 let lastFrame = 0;
 let elapsedSeconds = 0;
 let lastFootstepX = 640;
@@ -330,6 +344,9 @@ function renderPersona(target) {
     page.append(makeButton('下一頁', 'primary-button', () => { personaPage = 1; render(); }, { 'data-primary': true }));
   } else {
     page.append(element('h2', 'recap-heading', '十年回顧'));
+    // 小問成績只顯示於回顧，不傳入 calculatePersona 的人格計算。
+    const quizCorrect = content.chapters.filter((_, index) => flow.progress.results[index + 1]?.quiz === true).length;
+    page.append(element('p', 'score-line', `路上小問 答對 ${quizCorrect} / 10`));
     const recap = element('div', 'recap-grid');
     content.chapters.forEach((chapter, index) => {
       const result = results[index];
@@ -387,17 +404,38 @@ function render() {
   updateHeader();
   renderMenu();
   ui['story-content'].replaceChildren();
-  ui['movement-controls'].hidden = !['walk1', 'walk2'].includes(flow.phase);
+  const walking = ['walk1', 'walk2'].includes(flow.phase);
+  // 同一個面板承接所有閱讀階段；走路時連同焦點與捲動區一併收起。
+  const panel = ui['story-panel'];
+  panel.hidden = walking;
+  if (panel.dataset.phase !== flow.phase) panel.scrollTop = 0;
+  panel.dataset.phase = flow.phase;
+  // 只在走路階段關閉瀏覽器手勢，其他互動保留原生操作。
+  ui['game-screen'].classList.toggle('guide-walking', ['walk1', 'walk2'].includes(flow.phase));
 
   if (flow.phase === 'card') {
     renderChapterCard(ui['story-content']);
     setHint('準備好就出發。');
   } else if (flow.phase === 'walk1' || flow.phase === 'walk2') {
     renderWalk(ui['story-content']);
-    setHint('按住往前走');
+    setHint(window.matchMedia('(pointer: coarse)').matches ? '按住畫面往前走' : '按住 → 往前走');
   } else if (flow.phase === 'chat') {
     renderChat(ui['story-content']);
     setHint('選擇一個回覆。');
+  } else if (flow.phase === 'quiz') {
+    // 小問在原本的內容容器內呈現，保留版本防護以丟棄已卸下按鈕的回呼。
+    const revision = flow.revision;
+    renderQuiz(ui['story-content'], {
+      chapter: flow.chapter, result: flow.pending?.quiz,
+      onAnswer: (index) => {
+        if (performance.now() < confirmIgnoreUntil) return;
+        if (dispatch({ type: 'QUIZ_RESULT', index, revision })) audio.playNote('interact');
+      },
+      onContinue: () => {
+        if (performance.now() >= confirmIgnoreUntil) dispatch({ type: 'CONTINUE_QUIZ', revision });
+      },
+    });
+    setHint('路上小問');
   } else if (flow.phase === 'game') {
     renderGame(ui['story-content']);
     setHint('完成眼前的小互動。');
@@ -412,7 +450,6 @@ function render() {
     setHint('下一站正在路上。');
   } else if (flow.phase === 'persona') {
     renderPersona(ui['story-content']);
-    ui['movement-controls'].hidden = true;
     setHint('翻開你的十年足跡。');
   }
   updateWorldPrompt();
@@ -678,7 +715,8 @@ function handleStateChange(previous, next) {
     setMoving(false);
     if (next.phase !== 'game') swipePointer = null;
     if (next.phase === 'walk1' || next.phase === 'walk2') lastFootstepX = next.x;
-    if (next.phase === 'chat' || next.phase === 'game') confirmIgnoreUntil = performance.now() + 300;
+    // 小問同樣清除前進輸入並保留 300ms 防誤觸。
+    if (next.phase === 'chat' || next.phase === 'game' || next.phase === 'quiz') confirmIgnoreUntil = performance.now() + 300;
     if (next.phase === 'game') {
       const game = currentContent().game;
       stopGame = game?.type === 'stop'
@@ -705,6 +743,8 @@ function handleStateChange(previous, next) {
       swipePointer = null;
     }
     if (next.phase === 'persona') personaPage = 0;
+    // 自動走仍經過原本的 MOVE 停靠判定。
+    if (guide.auto && (next.phase === 'walk1' || next.phase === 'walk2') && !next.menuOpen && !document.hidden) setMoving(true);
   }
 }
 
@@ -716,7 +756,11 @@ function dispatch(action) {
   applyEffect(result.effect);
   handleStateChange(previous, flow);
   render();
-  if (previous.phase !== flow.phase && ['card', 'chat', 'game', 'reveal', 'takeaway', 'depart', 'persona'].includes(flow.phase)) {
+  if (previous.phase !== flow.phase) guide.enter(flow, currentContent().game?.type);
+  // 小問揭曉仍在 quiz 階段；換成繼續鈕時也要移交焦點並防止連點跳過說明。
+  const quizAnswered = flow.phase === 'quiz' && previous.pending?.quiz !== flow.pending?.quiz;
+  if (quizAnswered) confirmIgnoreUntil = performance.now() + 300;
+  if (quizAnswered || (previous.phase !== flow.phase && ['card', 'chat', 'quiz', 'game', 'reveal', 'takeaway', 'depart', 'persona'].includes(flow.phase))) {
     scheduleFocus(flow.revision);
   }
   return true;
@@ -727,6 +771,7 @@ function setMoving(value) {
   if (!nextValue) {
     heldPointerId = null;
     heldKeys.clear();
+    manualStartX = null;
   }
   if (moving === nextValue) return;
   moving = nextValue;
@@ -738,14 +783,17 @@ function holdMove(pointerId = null) {
     if (heldPointerId !== null) return;
     heldPointerId = pointerId;
   }
+  if (manualStartX === null) manualStartX = flow.x;
   setMoving(true);
 }
 
 function releaseMove(pointerId = null) {
   if (pointerId !== null && heldPointerId !== pointerId) return;
-  heldPointerId = null;
-  heldKeys.clear();
-  setMoving(false);
+  if (pointerId !== null) heldPointerId = null;
+  if (heldPointerId !== null || heldKeys.size) return;
+  guide.released(flow, manualStartX !== null && flow.x > manualStartX);
+  manualStartX = null;
+  if (!guide.auto) setMoving(false);
 }
 
 function pauseStopTimer() {
@@ -773,42 +821,26 @@ function openMenu() {
 
 function closeMenu() {
   if (flow.menuOpen) dispatch({ type: 'CLOSE_MENU' });
+  if (guide.auto && !document.hidden) setMoving(true);
   resumeStopTimer();
   scheduleDepartTimer();
 }
 
 function updateWorldPrompt() {
-  const chapter = currentArt();
-  let world = null;
-  let label = '';
-  let isKindness = false;
-  if (pendingKindness && (flow.phase === 'walk1' || flow.phase === 'walk2')) {
-    world = { x: pendingKindness.x, y: 330 };
-    label = '順手幫一下';
-    isKindness = true;
-  } else if (flow.phase === 'game' && currentContent().game) {
-    world = { x: chapter.stops.interaction, y: 440 };
-    label = currentContent().game.prompt;
-  }
-
-  if (!world) {
+  // 題目已在閱讀面板中。場景泡泡只在走路、有善意互動時出現。
+  if (!pendingKindness || (flow.phase !== 'walk1' && flow.phase !== 'walk2')) {
     ui['world-prompt'].hidden = true;
     return;
   }
-  ui['world-prompt'].hidden = false;
-  ui['world-prompt'].textContent = label;
-  const position = stage.worldToScreen(world.x, world.y, 1);
-  const frameRect = ui['stage-frame'].getBoundingClientRect();
-  ui['world-prompt'].style.left = `${Math.max(120, Math.min(frameRect.width - 120, position.left))}px`;
-  // 泡泡往上長：上緣要留在標題列下方；場景太矮放不下時（手機直式的小互動），題目在下方面板已有，泡泡就不顯示。
-  const minTop = ui['world-prompt'].offsetHeight + 60;
-  if (!isKindness && minTop > frameRect.height * 0.62) {
-    ui['world-prompt'].hidden = true;
-    return;
-  }
-  ui['world-prompt'].style.top = `${Math.max(minTop, Math.min(frameRect.height - 12, position.top))}px`;
-  ui['world-prompt'].setAttribute('aria-label', isKindness ? pendingKindness.label : label);
-  ui['world-prompt'].dataset.kindness = String(isKindness);
+  const prompt = ui['world-prompt'];
+  prompt.hidden = false;
+  prompt.textContent = '順手幫一下';
+  const position = stage.worldToScreen(pendingKindness.x, 330);
+  const inset = prompt.offsetWidth / 2 + 8;
+  prompt.style.left = `clamp(calc(env(safe-area-inset-left, 0px) + ${inset}px), ${position.left}px, calc(100% - env(safe-area-inset-right, 0px) - ${inset}px))`;
+  prompt.style.top = `${position.top}px`;
+  prompt.setAttribute('aria-label', pendingKindness.label);
+  prompt.dataset.kindness = 'true';
 }
 
 function triggerKindness() {
@@ -829,14 +861,13 @@ function checkKindness(oldX, newX) {
 function tickMovement(deltaSeconds) {
   if (!moving || flow.menuOpen) return;
   const chapter = currentArt();
-  const stopAt = flow.phase === 'walk1'
-    ? chapter.stops.chat
-    : currentContent().game ? chapter.stops.interaction : chapter.stops.takeaway;
-  const next = flow.phase === 'walk1' ? 'chat' : currentContent().game ? 'game' : 'takeaway';
+  // 小問前後仍是 walk2，由流程決定下一個停靠點。
+  const { stopAt, next } = getWalkTarget(flow, chapter.stops);
   const previous = flow;
   const result = transitionFlow(flow, { type: 'MOVE', delta: WALK_SPEED * DEBUG_SPEED * deltaSeconds, stopAt, next });
   if (result.state === flow) return;
   flow = result.state;
+  guide.moved(previous, flow.x - previous.x);
   checkKindness(previous.x, flow.x);
   if ((flow.phase === 'walk1' || flow.phase === 'walk2') && flow.x - lastFootstepX >= FOOTSTEP_DISTANCE) {
     audio.playNote('step');
@@ -845,6 +876,7 @@ function tickMovement(deltaSeconds) {
   if (previous.phase !== flow.phase) {
     handleStateChange(previous, flow);
     render();
+    guide.enter(flow, currentContent().game?.type);
     scheduleFocus(flow.revision);
   }
 }
@@ -877,6 +909,7 @@ function frame(now) {
   tickMovement(delta);
   tickStop(now);
   stage.update({ x: flow.x, timeSeconds: elapsedSeconds, moving, pose: flow.phase === 'chat' ? 'wave' : 'walk' });
+  guide.update(flow, currentArt().stops.chat);
   updateWorldPrompt();
   requestAnimationFrame(frame);
 }
@@ -896,6 +929,7 @@ function handleVisibilityChange() {
     return;
   }
   lastFrame = 0;
+  if (guide.auto && !flow.menuOpen) setMoving(true);
   resumeStopTimer();
   scheduleDepartTimer();
   void audio.resume().then((resumed) => {
@@ -917,6 +951,10 @@ function debugStateFromUrl() {
     flow = transitionFlow(flow, { type: 'CARD_DONE' }).state;
     flow = transitionFlow(flow, { type: 'MOVE', delta: 5000, stopAt: currentArt().stops.chat, next: 'chat' }).state;
     flow = transitionFlow(flow, { type: 'REPLY', index: 0 }).state;
+    // 保留舊有 g=1 直接驗小互動的入口；略過的小問記為未答對，不增加成績。
+    flow = transitionFlow(flow, { type: 'MOVE', delta: 5000, ...getWalkTarget(flow, currentArt().stops) }).state;
+    flow = { ...flow, pending: { ...flow.pending, quiz: false } };
+    flow = transitionFlow(flow, { type: 'CONTINUE_QUIZ' }).state;
     const next = currentContent().game ? 'game' : 'takeaway';
     const stopAt = currentContent().game ? currentArt().stops.interaction : currentArt().stops.takeaway;
     flow = transitionFlow(flow, { type: 'MOVE', delta: 5000, stopAt, next }).state;
@@ -935,7 +973,8 @@ function focusGroup(selector, direction) {
   const current = items.indexOf(document.activeElement);
   const start = current < 0 ? (direction > 0 ? -1 : 0) : current;
   const index = (start + direction + items.length) % items.length;
-  items[index].focus({ preventScroll: true });
+  // 方向鍵移到面板下緣的選項時，讓內部捲動區跟著焦點移動。
+  items[index].focus();
 }
 
 function adjustSlider(direction) {
@@ -956,19 +995,24 @@ function submitSlider() {
 function onKeyDown(event) {
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
   if (ui['chapter-menu'].open) return;
+  // 走到停靠點後，仍按住的確認鍵不得重複觸發剛出現的題目。
+  if (event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    return;
+  }
 
   const activeControl = event.target instanceof Element && event.target.closest('button, input, select, textarea');
+  // 空白鍵只在非控制項焦點時走路，保留按鈕原生的鍵盤操作。
+  if ((flow.phase === 'walk1' || flow.phase === 'walk2') && (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd' || (event.key === ' ' && !activeControl))) {
+    event.preventDefault();
+    heldKeys.add(event.key.toLowerCase());
+    holdMove();
+    return;
+  }
   if (!activeControl && !ui['world-prompt'].hidden && (event.key === 'Enter' || event.key === ' ')) {
     event.preventDefault();
     if (pendingKindness) triggerKindness();
     else focusFirstAction();
-    return;
-  }
-
-  if ((flow.phase === 'walk1' || flow.phase === 'walk2') && (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd')) {
-    event.preventDefault();
-    heldKeys.add(event.key.toLowerCase());
-    holdMove();
     return;
   }
 
@@ -1022,14 +1066,14 @@ function onKeyDown(event) {
 }
 
 function onKeyUp(event) {
-  if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') {
+  if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd' || event.key === ' ') {
     heldKeys.delete(event.key.toLowerCase());
-    if (heldKeys.size === 0) releaseMove();
+    releaseMove();
   }
 }
 
 function beginPointerMove(event) {
-  if (!event.isPrimary || event.target.closest('button')) return;
+  if (!event.isPrimary || event.button !== 0 || event.target.closest('button, input, select, textarea, a, dialog')) return;
   if (flow.phase !== 'walk1' && flow.phase !== 'walk2') return;
   event.preventDefault();
   unlockAudio();
@@ -1042,16 +1086,12 @@ function bindInteractions() {
     unlockAudio();
     dispatch({ type: 'BEGIN' });
   });
-  ui['walk-button'].addEventListener('pointerdown', (event) => {
-    if (!event.isPrimary) return;
-    event.preventDefault();
-    unlockAudio();
-    holdMove(event.pointerId);
-  });
-  ui['stage-frame'].addEventListener('pointerdown', beginPointerMove);
+  // 舞台與題目區的空白處都能按住，不攔截選單或互動控制項。
+  ui['game-screen'].addEventListener('pointerdown', beginPointerMove);
   window.addEventListener('pointerup', (event) => releaseMove(event.pointerId));
   window.addEventListener('pointercancel', (event) => releaseMove(event.pointerId));
-  window.addEventListener('blur', () => releaseMove());
+  window.addEventListener('blur', releaseAllInput);
+  window.addEventListener('focus', () => { if (guide.auto && !document.hidden && !flow.menuOpen) setMoving(true); });
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('pointerdown', unlockAudio, { capture: true });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import content from '../content/content.js';
+import roadside from '../content/roadside.js';
 import { createFlowState, createProgress, transitionFlow } from './flow.js';
 
 function step(state, type, fields = {}) {
@@ -17,9 +18,16 @@ function walkToReply(state) {
 
 function finishGame(state, { index = 0, input = {}, correct = true } = {}) {
   state = step(state, 'REPLY', { index });
+  state = finishQuiz(state);
   state = step(state, 'MOVE', { delta: 500, stopAt: 1400, next: 'game' });
   state = step(state, 'GAME_RESULT', { input, correct });
   return step(state, 'CONTINUE_REVEAL');
+}
+
+function finishQuiz(state) {
+  state = step(state, 'MOVE', { delta: 500, stopAt: 1180, next: 'quiz' });
+  state = step(state, 'QUIZ_RESULT', { index: roadside[state.chapter - 1].answer });
+  return step(state, 'CONTINUE_QUIZ');
 }
 
 test('a chapter commits the result and advancement together on takeaway continue', () => {
@@ -33,7 +41,7 @@ test('a chapter commits the result and advancement together on takeaway continue
   assert.equal(state.phase, 'takeaway');
   assert.equal(state.progress, progress);
   assert.deepEqual(state.progress.results, {});
-  assert.deepEqual(state.pending, { lean: 'perf', perf: 0.7, correct: true, input: { reply: 1, choice: 2 } });
+  assert.deepEqual(state.pending, { lean: 'perf', perf: 0.7, correct: true, input: { reply: 1, choice: 2 }, quiz: true });
 
   const committed = transitionFlow(state, { type: 'CONTINUE_TAKEAWAY' });
   assert.deepEqual(committed.effect, {
@@ -90,7 +98,7 @@ test('replaying a chapter preserves saved progress until the replacement is comm
 
   const { state: departed, effect } = transitionFlow(state, { type: 'CONTINUE_TAKEAWAY' });
   assert.deepEqual(effect.value.results, {
-    1: { lean: 'brand', perf: 0, correct: false, input: { reply: 3, choice: 0 } },
+    1: { lean: 'brand', perf: 0, correct: false, input: { reply: 3, choice: 0 }, quiz: true },
     2: other,
   });
   assert.equal(effect.value.resume, 3);
@@ -107,6 +115,9 @@ test('the finale reaches persona by way of the family doorstep and saves complet
     ['CARD_DONE'],
     ['MOVE', { delta: 400, stopAt: 960, next: 'chat' }],
     ['REPLY', { index: 1 }],
+    ['MOVE', { delta: 400, stopAt: 1180, next: 'quiz' }],
+    ['QUIZ_RESULT', { index: roadside[9].answer }],
+    ['CONTINUE_QUIZ'],
     ['MOVE', { delta: 400, stopAt: 1200, next: 'takeaway' }],
   ]) {
     state = step(state, type, fields);
@@ -117,12 +128,12 @@ test('the finale reaches persona by way of the family doorstep and saves complet
 
   const completed = transitionFlow(state, { type: 'CONTINUE_TAKEAWAY' });
   phases.push(completed.state.phase);
-  assert.deepEqual(phases, ['card', 'walk1', 'chat', 'walk2', 'takeaway', 'persona']);
+  assert.deepEqual(phases, ['card', 'walk1', 'chat', 'walk2', 'quiz', 'quiz', 'walk2', 'takeaway', 'persona']);
   assert.deepEqual(completed.effect, {
     type: 'persist',
     value: {
       ...progress, done: true,
-      results: { 10: { lean: 'perf', perf: 0.7, correct: null, input: { reply: 1 } } },
+      results: { 10: { lean: 'perf', perf: 0.7, correct: null, input: { reply: 1 }, quiz: true } },
     },
   });
   const restored = createFlowState(createProgress(JSON.stringify(completed.effect.value)));
@@ -213,6 +224,7 @@ test('reply metadata comes from content and only scored games retain boolean cor
   let state = step(walkToReply(createFlowState()), 'REPLY', { index: 2 });
   const { lean, perf } = content.chapters[0].chat.replies[2];
   assert.deepEqual(state.pending, { lean, perf, correct: null, input: { reply: 2 } });
+  state = finishQuiz(state);
   state = step(state, 'MOVE', { delta: 500, stopAt: 1400, next: 'game' });
   assert.equal(step(state, 'GAME_RESULT', { input: { choice: 2 }, correct: null }), state);
   state = step(state, 'GAME_RESULT', { input: { choice: 2, reply: 3 }, correct: false });

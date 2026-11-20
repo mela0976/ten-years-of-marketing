@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#27343b" />
     <meta name="description" content="一段從台北出發、慢慢走回家的十年旅程。" />
     <title>十年，慢慢走</title>
+    <!-- 子路徑預覽也沿用本站主角貼圖作為分頁圖示。 -->
+    <link rel="icon" href="./art/common/hero-head.webp" type="image/webp" />
   </head>
   <body>
     <main id="app" aria-label="十年，慢慢走">
@@ -40,9 +42,7 @@
         <section id="story-panel" class="story-panel" aria-live="polite">
           <div id="story-content" class="story-content"></div>
           <p id="hint" class="hint"></p>
-          <div id="movement-controls" class="movement-controls" hidden>
-            <button id="walk-button" class="primary-button walk-button" type="button">按住往前走</button>
-          </div>
+          <!-- 走路改由整個遊戲畫面接收按住操作，提示由 guide 模組建立。 -->
         </section>
       </section>
 

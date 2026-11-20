@@ -1,0 +1,35 @@
+/* 操作提示以舞台座標定位，不依賴題目面板的位置。 */
+.guide-bubble {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 16px);
+  padding: 6px 10px;
+  border: 1px solid #dfcba7;
+  border-radius: 14px;
+  color: #27343b;
+  background: #fffaf0;
+  box-shadow: 0 4px 12px rgb(34 40 40 / 20%);
+  font-size: 17px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -100%);
+}
+.guide-bubble.is-visible { opacity: 1; }
+.guide-hand { display: block; width: 30px; height: 30px; flex: none; }
+.guide-hand[hidden] { display: none; }
+.guide-hand svg { display: block; width: 100%; height: 100%; fill: #f3cfa6; stroke: #594537; stroke-width: 2.5; stroke-linejoin: round; }
+.guide-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.guide-settings + .chapter-list { max-block-size: min(620px, calc(90dvh - 160px)); }
+.guide-menu-button { min-height: 48px; padding: 8px; font-size: 18px; }
+.guide-menu-button[data-state]::after { content: '：' attr(data-state); }
+.guide-walking { touch-action: none; user-select: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .guide-bubble { transition: opacity 300ms ease; }
+  .guide-hand:not([hidden]) { animation: guide-press 1.2s ease-in-out 3; }
+  @keyframes guide-press { 50% { transform: translateY(5px) scale(.92); } }
+}

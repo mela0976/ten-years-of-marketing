@@ -26,7 +26,7 @@ test('ten stage configs align with content years, six parallax layers and PRD st
     assert.equal(chapter.year, content.chapters[index].year);
     assert.equal(chapter.length, 3600);
     assert.deepEqual(chapter.layers.map(({ name, scroll }) => [name, scroll]), expectedLayers);
-    assert.deepEqual(chapter.stops, { start: 640, chat: 1520, interaction: 2800, takeaway: 2800, departure: 3520 });
+    assert.deepEqual(chapter.stops, { start: 640, chat: 1520, quiz: 2180, interaction: 2800, takeaway: 2800, departure: 3520 });
   });
 });
 

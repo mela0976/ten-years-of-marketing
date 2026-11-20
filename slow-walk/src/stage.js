@@ -3,10 +3,31 @@ import { chapters } from './chapters/index.js';
 import { loadChapterAssets } from './assets.js';
 import { createBystander, createCompanion, createTraveler } from './characters/rig.js';
 
-const LOGICAL_WIDTH = 1280;
 const LOGICAL_HEIGHT = 720;
 const GROUND_Y = 154;
+// 前景淡出：主角左右各留多少寬度、淡到原本的幾成。
+const FOREGROUND_CLEARANCE = 40;
+const FOREGROUND_FADED = 0.28;
 const DEPART_SECONDS = 3.4;
+
+// 角色的繪製座標以秒為單位追上流程座標。鳥的反應較慢，會在主角停下後補位。
+const TRAVELER_GLIDE = 21;
+const COMPANION_GLIDE = 6;
+const CHARACTER_SPEED_DAMPING = 22;
+const MAX_CHARACTER_FRAME = 0.05;
+const CHARACTER_STOP_DISTANCE = 0.12;
+const COMPANION_GAP = 96;
+const RIDE_COMPANION_GAP = 150;
+
+function characterSample(x) {
+  return { x, speed: 0, phase: 0, moving: false };
+}
+
+function glideCharacter(current, target, damping, deltaSeconds) {
+  if (deltaSeconds === 0) return current;
+  const next = THREE.MathUtils.damp(current, target, damping, deltaSeconds);
+  return Math.abs(target - next) <= CHARACTER_STOP_DISTANCE ? target : next;
+}
 
 function disposeGroup(group) {
   group.traverse((node) => {
@@ -139,9 +160,13 @@ function makeParticleField(count, color, seed) {
 }
 
 export class StageRenderer {
-  constructor(host, fallback) {
+  constructor(host, fallback, sheet) {
     this.host = host;
     this.fallback = fallback;
+    // 可視寬度依舞台尺寸決定；讀題時由實際面板高度決定取景下緣。
+    this.sheet = sheet;
+    this.viewWidth = LOGICAL_HEIGHT;
+    this.viewBottom = 0;
     this.chapter = null;
     this.assets = new Map();
     this.assetPromises = new Map();
@@ -157,14 +182,13 @@ export class StageRenderer {
     try {
       this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      this.renderer.setSize(LOGICAL_WIDTH, LOGICAL_HEIGHT, false);
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.domElement.setAttribute('aria-hidden', 'true');
       this.renderer.domElement.className = 'stage-canvas';
       this.host.append(this.renderer.domElement);
       this.scene = new THREE.Scene();
-      this.camera = new THREE.OrthographicCamera(-640, 640, 720, 0, 0.1, 5000);
+      this.camera = new THREE.OrthographicCamera(-this.viewWidth / 2, this.viewWidth / 2, LOGICAL_HEIGHT, 0, 0.1, 5000);
       this.camera.position.set(0, 0, 1000);
       this.camera.lookAt(0, 0, 0);
       this.contextAvailable = true;
@@ -177,17 +201,12 @@ export class StageRenderer {
         this.contextAvailable = true;
         if (this.chapter) this.setChapter(this.chapter.id);
       });
-      if (typeof ResizeObserver !== 'undefined') {
-        this.resizeObserver = new ResizeObserver(() => this.resize());
-        this.resizeObserver.observe(this.host);
-      }
       this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
       this.onMotionChange = (event) => {
         this.reducedMotion = event.matches;
         if (this.chapter) this.setChapter(this.chapter.id);
       };
       this.motionQuery.addEventListener('change', this.onMotionChange);
-      this.resize();
       this.showFallback(false);
     } catch {
       this.renderer?.dispose();
@@ -196,6 +215,12 @@ export class StageRenderer {
       this.contextAvailable = false;
       this.showFallback(true);
     }
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      this.resizeObserver.observe(this.host);
+      if (this.sheet) this.resizeObserver.observe(this.sheet, { box: 'border-box' });
+    }
+    this.resize();
   }
 
   async getAssets(chapterId) {
@@ -220,6 +245,9 @@ export class StageRenderer {
   async setChapter(chapterId) {
     const nextChapter = chapters[chapterId - 1];
     if (!nextChapter) return;
+    // 同章貼圖或場景重建時沿用角色位置；換章才重新設定站位。
+    const sameChapter = this.chapter?.id === chapterId;
+    if (!sameChapter) this.characterMotion = null;
     this.chapter = nextChapter;
     this.version += 1;
     const currentVersion = this.version;
@@ -230,7 +258,7 @@ export class StageRenderer {
 
     // Draw the color-block world immediately; optional registered WebP art may replace it later.
     this.buildStage(nextChapter, new Map());
-    this.update({ x: nextChapter.stops.start });
+    this.update({ x: sameChapter ? this.playerX : nextChapter.stops.start });
     this.resize();
     const assets = await this.getAssets(chapterId);
     if (currentVersion !== this.version) return;
@@ -249,6 +277,7 @@ export class StageRenderer {
 
   buildStage(chapter, assets) {
     this.scene.clear();
+    this.scene.background = new THREE.Color(chapter.palette.sky);
     this.root = new THREE.Group();
     this.worldRoot = new THREE.Group();
     this.root.add(this.worldRoot);
@@ -265,6 +294,8 @@ export class StageRenderer {
       for (const [index, item] of layer.items.entries()) {
         const mesh = addItem(item, group, assets, layer.depth * 100 + index * 2 + 1);
         if (item.flip) mesh.scale.x *= -1;
+        // 遠景是一幅完整的畫，縮放留給取景邏輯，章節擺位表可繼續共用。
+        if (layer.name === 'far' && item.id === 'background') this.backdrop = mesh;
         if (layer.name === 'stage') {
           mesh.userData.baseX = mesh.position.x;
           mesh.userData.baseY = mesh.position.y;
@@ -279,7 +310,7 @@ export class StageRenderer {
     const characterLayer = this.layerGroups.find((layer) => layer.userData.depth === 4);
     this.shadows = new THREE.Group();
     characterLayer.add(this.shadows);
-    for (const [x, width, opacity] of [[0, 54, 0.2], [-94, 36, 0.15]]) {
+    for (const [x, width, opacity] of [[0, 54, 0.2], [-COMPANION_GAP, 36, 0.15]]) {
       const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#24302f', transparent: true, opacity, depthWrite: false }));
       shadow.position.set(x, GROUND_Y - 3, -5);
       shadow.scale.set(width, 11, 1);
@@ -295,7 +326,7 @@ export class StageRenderer {
     this.companion.baseY = GROUND_Y;
     characterLayer.add(this.companion.root);
     this.bystander = createBystander(assets);
-    this.bystander.root.position.set(chapter.stops.chat + 210, GROUND_Y, 0);
+    this.bystander.root.position.y = GROUND_Y;
     this.bystander.baseY = GROUND_Y;
     this.bystander.root.visible = !chapter.hideBystander;
     characterLayer.add(this.bystander.root);
@@ -311,6 +342,8 @@ export class StageRenderer {
     if (this.scene) this.scene.clear();
     this.root = null;
     this.worldRoot = null;
+    this.backdrop = null;
+    this.stageMeshes = null;
     this.layerGroups = [];
     this.kindnessEffects = [];
   }
@@ -331,30 +364,120 @@ export class StageRenderer {
   }
 
   resize() {
-    if (!this.renderer) return;
     const rect = this.host.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setSize(Math.round(rect.width), Math.round(rect.height), false);
-    this.renderer.render(this.scene, this.camera);
+    const scale = rect.height / LOGICAL_HEIGHT;
+    this.viewWidth = rect.width / scale;
+    this.viewBottom = -Math.max(0, ((this.sheet?.offsetHeight ?? 0) + 8) / scale - GROUND_Y);
+    if (this.camera) {
+      this.camera.left = -this.viewWidth / 2;
+      this.camera.right = this.viewWidth / 2;
+      this.camera.bottom = this.viewBottom;
+      this.camera.top = this.viewBottom + LOGICAL_HEIGHT;
+      this.camera.updateProjectionMatrix();
+    }
+    if (this.renderer && this.contextAvailable) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      if (this.renderer.getPixelRatio() !== dpr) this.renderer.setPixelRatio(dpr);
+      const canvas = this.renderer.domElement;
+      if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
+        this.renderer.setSize(rect.width, rect.height, false);
+      }
+    }
+    if (this.chapter) {
+      this.fitScenery();
+      this.follow(this.departing ? this.departCamX ?? this.playerX : this.playerX);
+    }
+    this.render();
   }
 
-  update({ x = this.playerX, timeSeconds = 0, moving = false, pose = 'walk' } = {}) {
-    if (!this.chapter || !this.root) return;
-    this.playerX = x;
-    const departed = this.applyDeparture(x, timeSeconds);
-    const cameraX = Math.max(640, Math.min(departed ? this.departCamX : x, this.chapter.length - 640));
-    this.camX = cameraX;
-    this.worldRoot.position.x = -cameraX;
+  fitScenery() {
+    const width = this.viewWidth;
+    const length = this.chapter.length;
+    if (this.backdrop) {
+      // 涵蓋兩端夾限位置之間的完整視差行程。減少動態時各層同行，也要填滿路尾。
+      const scroll = this.reducedMotion ? 1 : this.backdrop.parent.userData.scroll;
+      const span = width + Math.max(0, length - width) * scroll;
+      const zoom = Math.max(1, span / this.backdrop.geometry.parameters.width);
+      this.backdrop.scale.set(zoom, zoom, 1);
+      this.backdrop.position.x = length * scroll / 2;
+    }
+    // 保留地面上緣的接點；鏡頭為面板抬高主角時，下方仍由當章地面鋪滿。
+    for (const id of ['road-base', 'ground-a', 'ground-b']) {
+      for (const mesh of this.stageMeshes?.get(id) ?? []) {
+        const height = mesh.geometry.parameters.height;
+        mesh.scale.y = 1 - this.viewBottom / height;
+        mesh.position.y = mesh.userData.baseY + this.viewBottom / 2;
+        if (id === 'road-base') mesh.scale.x = Math.max(1, width / length);
+      }
+    }
+  }
+
+  follow(x) {
+    const half = this.viewWidth / 2;
+    // 在前方保留視野；視窗比整條路更寬時，鏡頭固定在路的中央。
+    this.camX = half * 2 >= this.chapter.length ? this.chapter.length / 2
+      : Math.max(half, Math.min(x + this.viewWidth * 0.14, this.chapter.length - half));
+    if (this.worldRoot) this.worldRoot.position.x = -this.camX;
     for (const layer of this.layerGroups) {
-      const effectiveScroll = this.reducedMotion ? 1 : layer.userData.scroll;
-      layer.position.x = cameraX * (1 - effectiveScroll);
+      const scroll = this.reducedMotion ? 1 : layer.userData.scroll;
+      layer.position.x = this.camX * (1 - scroll);
     }
+  }
+
+  // 速度用每格實際位移估算，相位也由同一段位移累積，放開按鍵後的滑行仍會走完。
+  animateCharacter(figure, sample, x, timeSeconds, deltaSeconds, canWalk, pose = 'walk', pedals = true) {
+    if (deltaSeconds > 0) {
+      const distance = Math.max(0, x - sample.x);
+      const moving = canWalk && distance > 0;
+      const speed = moving ? distance / deltaSeconds : 0;
+      sample.speed = THREE.MathUtils.damp(sample.speed, speed, CHARACTER_SPEED_DAMPING, deltaSeconds);
+      if (moving) sample.phase = (sample.moving ? sample.phase : 0) + distance / figure.definition.strideLength;
+      sample.moving = moving;
+    }
+    sample.x = x;
+    figure.update(x, timeSeconds, canWalk && sample.moving, pose, {
+      phase: sample.phase,
+      speed: sample.speed,
+      reducedMotion: this.reducedMotion,
+      pedals,
+    });
+  }
+
+  update({ x = this.playerX, timeSeconds = this.characterTime ?? 0, pose = this.characterPose ?? 'walk' } = {}) {
+    if (!this.chapter) return;
+    if (!this.root) {
+      this.playerX = x;
+      this.follow(x);
+      return;
+    }
+    const elapsed = timeSeconds - (this.characterTime ?? timeSeconds);
+    // 重玩、初始跳章等座標重設，不把跨場景位移當成一步。
+    if (!this.characterMotion || elapsed < 0 || x < this.playerX || (elapsed === 0 && x !== this.playerX)) {
+      this.characterMotion = { traveler: characterSample(x), companion: characterSample(x - COMPANION_GAP) };
+    }
+    const deltaSeconds = Math.max(0, Math.min(elapsed, MAX_CHARACTER_FRAME));
+    this.characterTime = timeSeconds;
+    this.characterPose = pose;
+    this.playerX = x;
+    const departed = this.applyDeparture(x, timeSeconds, deltaSeconds);
     if (!departed) {
-      this.traveler.update(x, timeSeconds, moving, pose);
-      this.companion.update(x - 96, timeSeconds, moving, 'walk');
+      const { traveler, companion } = this.characterMotion;
+      const heroX = glideCharacter(traveler.x, x, TRAVELER_GLIDE, deltaSeconds);
+      const birdX = glideCharacter(companion.x, heroX - COMPANION_GAP, COMPANION_GLIDE, deltaSeconds);
+      this.animateCharacter(this.traveler, traveler, heroX, timeSeconds, deltaSeconds, true, pose);
+      this.animateCharacter(this.companion, companion, birdX, timeSeconds, deltaSeconds, true);
+      this.shadows.visible = true;
+      this.shadows.children[0].position.x = heroX;
+      this.shadows.children[1].position.x = birdX;
     }
-    this.bystander.update(this.chapter.stops.chat + 210, timeSeconds, false, pose === 'wave' ? 'wave' : 'stand');
+    // 減少動態效果沿用直接對準流程座標的鏡頭，角色動畫仍保有起停。
+    const cameraTarget = departed ? this.departCamX : this.reducedMotion ? x : this.traveler.root.position.x;
+    this.follow(cameraTarget);
+    this.fadeForeground(this.traveler.root.position.x, deltaSeconds);
+    // 手機直式仍要看得見交談對象，站距最多占可視寬度的一半。
+    const bystanderX = this.chapter.stops.chat + Math.min(210, this.viewWidth / 2);
+    this.bystander.update(bystanderX, timeSeconds, false, pose === 'wave' ? 'wave' : 'stand');
     if (this.particles) {
       const attribute = this.particles.geometry.getAttribute('position');
       const origin = this.particles.userData.origin;
@@ -380,13 +503,28 @@ export class StageRenderer {
     if (this.contextAvailable) this.renderer.render(this.scene, this.camera);
   }
 
+  // 前景剪影擋到主角時淡出，離開後再淡回來。
+  fadeForeground(heroX, deltaSeconds) {
+    const layer = this.layerGroups.find((group) => group.userData.depth === 5);
+    if (!layer) return;
+    for (const mesh of layer.children) {
+      if (!mesh.isMesh || !mesh.material) continue;
+      mesh.userData.baseOpacity ??= mesh.material.opacity;
+      const width = mesh.geometry.parameters?.width ?? 0;
+      const left = mesh.position.x + layer.position.x - width / 2;
+      const covers = left < heroX + FOREGROUND_CLEARANCE && left + width > heroX - FOREGROUND_CLEARANCE;
+      const target = covers ? mesh.userData.baseOpacity * FOREGROUND_FADED : mesh.userData.baseOpacity;
+      mesh.material.opacity = deltaSeconds > 0 ? THREE.MathUtils.damp(mesh.material.opacity, target, 6, deltaSeconds) : target;
+    }
+  }
+
   // 離場：主角依該章的方式離開畫面。減少動態效果時不播放。
   startDeparture() {
     this.departing = !this.reducedMotion && Boolean(this.chapter?.departure);
     this.departT0 = null;
   }
 
-  applyDeparture(x, timeSeconds) {
+  applyDeparture(x, timeSeconds, deltaSeconds) {
     if (!this.departing || !this.chapter?.departure) return false;
     if (this.departT0 === null) this.departT0 = timeSeconds;
     // departFreeze 只給除錯用：把離場定格在指定進度。
@@ -403,7 +541,7 @@ export class StageRenderer {
     let heroY = GROUND_Y;
     let heroPose = 'stand';
     let heroMoving = false;
-    let birdX = x - 96;
+    let birdX = x - COMPANION_GAP;
     let birdMoving = false;
     let heroOpacity = 1;
     let birdOpacity = 1;
@@ -415,7 +553,7 @@ export class StageRenderer {
       const walk = Math.min(1, t / 0.45);
       heroX = x + (door - x) * walk;
       this.departCamX = heroX;
-      birdX = heroX - 96 * (1 - walk * 0.6);
+      birdX = heroX - COMPANION_GAP * (1 - walk * 0.6);
       heroMoving = walk < 1;
       birdMoving = heroMoving;
       heroPose = 'walk';
@@ -432,7 +570,7 @@ export class StageRenderer {
       heroY = GROUND_Y + (mount >= 1 ? seatY : 0);
       heroPose = mount >= 1 ? 'ride' : 'walk';
       heroMoving = mount < 1;
-      birdX = heroX - 150;
+      birdX = heroX - THREE.MathUtils.lerp(COMPANION_GAP, RIDE_COMPANION_GAP, mount);
       birdMoving = true;
       if (vehicle) {
         vehicle.position.x = vehicle.userData.baseX + drive;
@@ -442,7 +580,7 @@ export class StageRenderer {
       // 人已經在車廂裡：整節車連人一起開走。
       for (const mesh of meshes) mesh.position.x = mesh.userData.baseX + drive;
       heroX = x + drive;
-      birdX = heroX - 96;
+      birdX = heroX - COMPANION_GAP;
     } else if (mode === 'lanterns') {
       // 天燈一盞一盞升空，人留在原地看。
       meshes.forEach((mesh, index) => {
@@ -454,14 +592,16 @@ export class StageRenderer {
       // 步行離開。
       heroX = x + t * 900;
       this.departCamX = Math.min(heroX, x + 160);
-      birdX = heroX - 96;
+      birdX = heroX - COMPANION_GAP;
       heroMoving = true;
       birdMoving = true;
       heroPose = 'walk';
     }
     this.traveler.baseY = heroY;
-    this.traveler.update(heroX, timeSeconds, heroMoving, heroPose);
-    this.companion.update(birdX, timeSeconds, birdMoving, 'walk');
+    // 交通工具的座標仍由離場時間決定；自行車踩踏，機車保持雙腳放在踏板。
+    const { traveler, companion } = this.characterMotion;
+    this.animateCharacter(this.traveler, traveler, heroX, timeSeconds, deltaSeconds, heroMoving, heroPose, sprite === 'bike');
+    this.animateCharacter(this.companion, companion, birdX, timeSeconds, deltaSeconds, birdMoving);
     fade(this.traveler, heroOpacity);
     fade(this.companion, birdOpacity);
     this.shadows.visible = false;
@@ -470,9 +610,11 @@ export class StageRenderer {
 
   worldToScreen(worldX, worldY, scroll = 1) {
     const rect = this.host.getBoundingClientRect();
+    // DOM 泡泡與正交相機共用取景下緣、比例及減少動態時的捲動量。
+    const scale = rect.height / LOGICAL_HEIGHT;
     return {
-      left: (640 + worldX - this.camX * scroll) * (rect.width / LOGICAL_WIDTH),
-      top: (LOGICAL_HEIGHT - worldY) * (rect.height / LOGICAL_HEIGHT),
+      left: (this.viewWidth / 2 + worldX - this.camX * (this.reducedMotion ? 1 : scroll)) * scale,
+      top: (this.viewBottom + LOGICAL_HEIGHT - worldY) * scale,
     };
   }
 

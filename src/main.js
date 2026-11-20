@@ -210,6 +210,14 @@ function action(label, callback, kind = 'secondary', attrs = {}) {
   }, kind, attrs);
 }
 
+function slowWalkLink() {
+  return element('a', {
+    className: 'slow-walk-link',
+    text: roleConfig.labels.slowWalk,
+    attrs: { href: './slow-walk/' },
+  });
+}
+
 function showIntro() {
   updateProgress(progress, state.index, false);
   const best = readBestScore();
@@ -236,6 +244,7 @@ function showIntro() {
     element('ul', { className: 'rules-list' }, gamify.rules.map((rule) => element('li', { text: rule }))),
     element('div', { className: 'intro-actions' }, [
       action(roleConfig.labels.getBadge, () => { audio.start(); audio.play('flip'); movePhase('mode'); render(); }, 'primary'),
+      slowWalkLink(),
       timerToggle,
     ]),
   ], 'open');
@@ -1280,6 +1289,7 @@ function renderPersona() {
   ]);
   const summary = element('div', { className: 'review-side' }, [
     element('p', { className: 'final-rank-line', text: `${gamify.rankLines[place - 1]}　${state.score.toLocaleString('zh-TW')} 分` }),
+    slowWalkLink(),
     renderLeaderboard(),
     element('div', { className: 'persona-stats' }, [
       element('strong', { className: 'score', text: `互動正解 ${totals.score} 次` }),

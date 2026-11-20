@@ -58,7 +58,8 @@ export function makeChapter({ id, year, palette, vehicle, ambience, scenery: blo
     length,
     palette,
     layers,
-    stops: { start: 640, chat: 1520, interaction: 2800, takeaway: 2800, departure: 3520 },
+    // 路上小問停在對話與原小互動之間，十章共用同一個位置。
+    stops: { start: 640, chat: 1520, quiz: 2180, interaction: 2800, takeaway: 2800, departure: 3520 },
     vehicle,
     departure: sprites[id] ? DEPARTURES[id] ?? null : (id < 10 ? { mode: 'walk' } : null),
     hideBystander: sprites[id] ? !sprites[id].bystander : false,

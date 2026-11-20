@@ -207,6 +207,23 @@ button { color: inherit; }
 .button:hover { transform: translateY(-1px); border-color: var(--green-light); }
 .button:active { transform: translateY(1px); }
 .button:focus-visible, input:focus-visible { outline: 3px solid var(--green-light); outline-offset: 3px; }
+.slow-walk-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 48px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--green-light);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+.slow-walk-link:hover { color: var(--paper); }
+.slow-walk-link:focus-visible { outline: 3px solid var(--green-light); outline-offset: 3px; }
 .button-primary { border-color: var(--green); background: var(--green); }
 .button-primary:hover { background: #287d69; }
 .button-danger { border-color: var(--red); background: var(--red); font-size: 22px; }
