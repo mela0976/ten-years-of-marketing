@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import content from '../content/content.js';
+import chapterContext from '../content/context.js';
 import roadside from '../content/roadside.js';
 import { chapters } from './chapters/index.js';
 import { createFlowState, createProgress, getWalkTarget, transitionFlow } from './flow.js';
 import { getRunTotals, personaId } from './logic.js';
+import { getRevealMessages } from './quiz.js';
 
 const step = (state, type, fields = {}) => transitionFlow(state, { type, ...fields }).state;
 const move = (state, delta = 5000) => step(state, 'MOVE', { delta, ...getWalkTarget(state, chapters[state.chapter - 1].stops) });
@@ -37,13 +39,55 @@ test('路上小問有十題短題目、二到三個不同選項與範圍內的�
   assert.equal(roadside.length, 10);
   roadside.forEach((question, index) => {
     assert.ok(question.prompt.length > 0 && question.prompt.length <= 28);
-    assert.ok(question.reveal.length > 0 && question.reveal.length <= 40);
+    assert.ok(question.reveal.trim().length > 0 && question.reveal.length <= 40);
     assert.ok(question.options.length >= 2 && question.options.length <= 3);
     assert.equal(new Set(question.options).size, question.options.length);
     assert.ok(question.options.every((option) => typeof option === 'string' && option.trim() && option.length <= 12));
     assert.ok(Number.isInteger(question.answer) && question.answer >= 0 && question.answer < question.options.length);
     assert.notEqual(question.prompt, content.chapters[index].game?.prompt);
   });
+});
+
+test('各章都有一行可追溯的情境及對話揭曉文字', () => {
+  assert.equal(chapterContext.length, content.chapters.length);
+  content.chapters.forEach(({ year, book, takeaway }, index) => {
+    const context = chapterContext[index];
+    assert.ok(context.startsWith(String(year)) && context.includes(book), `第 ${index + 1} 章的情境須包含年份、出處`);
+    assert.equal(context.trim(), context);
+    assert.doesNotMatch(context, /[\r\n]/);
+    assert.ok(takeaway.trim());
+  });
+  assert.match(roadside[1].prompt, /2019.*星展銀行/);
+  assert.match(roadside[3].prompt, /2019.*Z 世代/);
+  assert.match(roadside[4].prompt, /2022.*台灣/);
+});
+
+test('九個小互動的每種揭曉文字皆非空，特殊分支有代入作答結果', () => {
+  for (const { year, game } of content.chapters) {
+    if (!game || !game.scored || game.type === 'stop') continue;
+    const messages = getRevealMessages(game, {});
+    assert.equal(messages[0], game.reveal);
+    assert.ok(messages[0].trim(), `${year} 的揭曉不可為空`);
+  }
+
+  const { game: tracking } = content.chapters[3];
+  for (const rejected of [0, 2, 4]) {
+    const choices = tracking.cards.map((_, index) => index < rejected ? 'left' : 'right');
+    assert.deepEqual(getRevealMessages(tracking, { choices }), [tracking.revealByCount.replace('{n}', String(rejected))]);
+  }
+  const { game: agent } = content.chapters[8];
+  assert.ok(agent.revealSame.trim() && agent.revealDiff.trim());
+  assert.deepEqual(getRevealMessages(agent, { choice: agent.agentPick }), [agent.revealSame]);
+  assert.deepEqual(getRevealMessages(agent, { choice: 0 }), [agent.revealDiff]);
+
+  const { game: stop } = content.chapters[7];
+  for (const { stopped, report, fresh } of [{ stopped: true, report: 160, fresh: 28 }, { stopped: false, report: 280, fresh: 4 }]) {
+    const [outcome, reason] = getRevealMessages(stop, { stopped, report, fresh });
+    assert.ok(stop.reveal.trim() && reason.includes(stop.reveal));
+    assert.match(outcome, stopped ? /喊停/ : /沒有喊停/);
+    assert.ok(outcome.includes(String(report)) && outcome.includes(`${fresh}%`));
+    assert.doesNotMatch(outcome, /[{}]/);
+  }
 });
 
 test('十章在對話後停靠一次小問，揭曉後回到原路，終章直接走向帶走句', () => {

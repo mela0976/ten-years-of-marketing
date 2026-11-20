@@ -1,10 +1,16 @@
 import * as THREE from 'three';
 import { chapters } from './chapters/index.js';
+import { ROAD_Y } from './chapters/chapter-utils.js';
+import { joinCabins, vehiclePoint } from './vehicle-alignment.js';
 import { loadChapterAssets } from './assets.js';
 import { createBystander, createCompanion, createTraveler } from './characters/rig.js';
 
 const LOGICAL_HEIGHT = 720;
-const GROUND_Y = 154;
+// 坐姿的承重點在髖軸（99）下方 8 單位，外套下襬會自然垂過座墊。
+const SEATED_CONTACT_Y = 91;
+const BOARD_STEP_DISTANCE = 60;
+// player-rig 的髖、頸、頭頂加總 229；進車門時依畫出的門框等比縮入車內。
+const TRAVELER_HEIGHT = 229;
 // 前景淡出：主角左右各留多少寬度、淡到原本的幾成。
 const FOREGROUND_CLEARANCE = 40;
 const FOREGROUND_FADED = 0.28;
@@ -228,7 +234,8 @@ export class StageRenderer {
     if (this.assets.has(chapterId)) return this.assets.get(chapterId);
     if (!this.assetPromises.has(chapterId)) {
       this.assetPromises.set(chapterId, loadChapterAssets(chapterId).then((assets) => {
-        this.assets.set(chapterId, assets);
+        // 一張都沒載到（離線或網路中斷）時不記住結果，下次換章或重試時再抓。
+        if (assets.size) this.assets.set(chapterId, assets);
         this.assetPromises.delete(chapterId);
         return assets;
       }));
@@ -264,6 +271,13 @@ export class StageRenderer {
     if (currentVersion !== this.version) return;
     this.assets = new Map([[chapterId, assets], ...((chapterId < chapters.length && this.assets.has(chapterId + 1)) ? [[chapterId + 1, this.assets.get(chapterId + 1)]] : [])]);
     this.keepCurrentAndNext(chapterId);
+    if (!assets.size && !this.assetRetry) {
+      // 沒載到貼圖：三秒後重試一次。
+      this.assetRetry = window.setTimeout(() => {
+        this.assetRetry = 0;
+        if (currentVersion === this.version) this.setChapter(chapterId);
+      }, 3000);
+    }
     if (assets.size) {
       this.disposeStage();
       this.buildStage(nextChapter, assets);
@@ -299,7 +313,6 @@ export class StageRenderer {
         if (layer.name === 'stage') {
           mesh.userData.baseX = mesh.position.x;
           mesh.userData.baseY = mesh.position.y;
-          mesh.userData.itemWidth = item.width;
           if (!this.stageMeshes.has(item.id)) this.stageMeshes.set(item.id, []);
           this.stageMeshes.get(item.id).push(mesh);
         }
@@ -308,26 +321,25 @@ export class StageRenderer {
     });
 
     const characterLayer = this.layerGroups.find((layer) => layer.userData.depth === 4);
+    // 走道與接廊取自當章剖面；接廊掛在車體上，離場時一起移動。
+    if (chapter.cabin) joinCabins(this.stageMeshes.get(chapter.departure.sprite), chapter.cabin);
     this.shadows = new THREE.Group();
     characterLayer.add(this.shadows);
     for (const [x, width, opacity] of [[0, 54, 0.2], [-COMPANION_GAP, 36, 0.15]]) {
       const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#24302f', transparent: true, opacity, depthWrite: false }));
-      shadow.position.set(x, GROUND_Y - 3, -5);
-      shadow.scale.set(width, 11, 1);
-      shadow.renderOrder = 490;
+      shadow.position.set(x, chapter.floorY - (chapter.cabin ? 0 : 3), -5);
+      shadow.scale.set(width, chapter.cabin ? 3 : 11, 1);
+      shadow.renderOrder = 440;
       this.shadows.add(shadow);
     }
     this.traveler = createTraveler(assets);
-    this.traveler.root.position.y = GROUND_Y;
-    this.traveler.baseY = GROUND_Y;
+    this.traveler.baseY = chapter.floorY;
     characterLayer.add(this.traveler.root);
     this.companion = createCompanion(assets);
-    this.companion.root.position.y = GROUND_Y;
-    this.companion.baseY = GROUND_Y;
+    this.companion.baseY = chapter.floorY;
     characterLayer.add(this.companion.root);
     this.bystander = createBystander(assets);
-    this.bystander.root.position.y = GROUND_Y;
-    this.bystander.baseY = GROUND_Y;
+    this.bystander.baseY = chapter.floorY;
     this.bystander.root.visible = !chapter.hideBystander;
     characterLayer.add(this.bystander.root);
 
@@ -368,7 +380,8 @@ export class StageRenderer {
     if (rect.width <= 0 || rect.height <= 0) return;
     const scale = rect.height / LOGICAL_HEIGHT;
     this.viewWidth = rect.width / scale;
-    this.viewBottom = -Math.max(0, ((this.sheet?.offsetHeight ?? 0) + 8) / scale - GROUND_Y);
+    // 讀題時保留車廂鞋底與題目框之間的距離。
+    this.viewBottom = -Math.max(0, ((this.sheet?.offsetHeight ?? 0) + 8) / scale - (this.chapter?.floorY ?? ROAD_Y));
     if (this.camera) {
       this.camera.left = -this.viewWidth / 2;
       this.camera.right = this.viewWidth / 2;
@@ -426,7 +439,7 @@ export class StageRenderer {
   }
 
   // 速度用每格實際位移估算，相位也由同一段位移累積，放開按鍵後的滑行仍會走完。
-  animateCharacter(figure, sample, x, timeSeconds, deltaSeconds, canWalk, pose = 'walk', pedals = true) {
+  animateCharacter(figure, sample, x, timeSeconds, deltaSeconds, canWalk, pose = 'walk', pedals = true, ride) {
     if (deltaSeconds > 0) {
       const distance = Math.max(0, x - sample.x);
       const moving = canWalk && distance > 0;
@@ -441,6 +454,7 @@ export class StageRenderer {
       speed: sample.speed,
       reducedMotion: this.reducedMotion,
       pedals,
+      ride,
     });
   }
 
@@ -477,7 +491,9 @@ export class StageRenderer {
     this.fadeForeground(this.traveler.root.position.x, deltaSeconds);
     // 手機直式仍要看得見交談對象，站距最多占可視寬度的一半。
     const bystanderX = this.chapter.stops.chat + Math.min(210, this.viewWidth / 2);
-    this.bystander.update(bystanderX, timeSeconds, false, pose === 'wave' ? 'wave' : 'stand');
+    // 乘客和車廂同步離場，避免車子從路人腳下開走。
+    const carriageOffset = departed && this.chapter.cabin ? this.traveler.root.position.x - x : 0;
+    this.bystander.update(bystanderX + carriageOffset, timeSeconds, false, pose === 'wave' ? 'wave' : 'stand');
     if (this.particles) {
       const attribute = this.particles.geometry.getAttribute('position');
       const origin = this.particles.userData.origin;
@@ -529,7 +545,7 @@ export class StageRenderer {
     if (this.departT0 === null) this.departT0 = timeSeconds;
     // departFreeze 只給除錯用：把離場定格在指定進度。
     const t = this.departFreeze ?? Math.min(1, Math.max(0, (timeSeconds - this.departT0) / DEPART_SECONDS));
-    const { mode, sprite, seat = 0.5, seatY = 0 } = this.chapter.departure;
+    const { mode, sprite, door, seat, cycling } = this.chapter.departure;
     const meshes = (sprite ? [].concat(sprite).flatMap((id) => this.stageMeshes.get(id) ?? []) : []);
     const go = Math.max(0, (t - 0.5) / 0.5);
     const drive = go * go * (mode === 'carry' ? 1500 : 900);
@@ -538,7 +554,9 @@ export class StageRenderer {
       if (node.isMesh) node.material.opacity = opacity;
     });
     let heroX = x;
-    let heroY = GROUND_Y;
+    let heroY = this.chapter.floorY;
+    let birdY = heroY;
+    let ride;
     let heroPose = 'stand';
     let heroMoving = false;
     let birdX = x - COMPANION_GAP;
@@ -549,32 +567,51 @@ export class StageRenderer {
     if (mode === 'board') {
       // 走進車裡（淡出），車再開走。
       const vehicle = meshes[meshes.length - 1];
-      const door = vehicle ? vehicle.userData.baseX - vehicle.userData.itemWidth * 0.22 : x;
+      const sill = vehicle ? vehiclePoint(vehicle, door) : { x, y: heroY };
       const walk = Math.min(1, t / 0.45);
-      heroX = x + (door - x) * walk;
+      const birdWalk = Math.min(1, t / 0.48);
+      heroX = THREE.MathUtils.lerp(x, sill.x, walk);
       this.departCamX = heroX;
-      birdX = heroX - COMPANION_GAP * (1 - walk * 0.6);
+      birdX = THREE.MathUtils.lerp(x - COMPANION_GAP, sill.x, birdWalk);
+      // 走到門前才踏上門檻；人和鳥都實際抵達車門，再淡出。
+      const stepUp = (walkerX) => THREE.MathUtils.smoothstep(BOARD_STEP_DISTANCE - Math.abs(sill.x - walkerX), 0, BOARD_STEP_DISTANCE);
+      heroY = THREE.MathUtils.lerp(this.chapter.floorY, sill.y, stepUp(heroX));
+      birdY = THREE.MathUtils.lerp(this.chapter.floorY, sill.y, stepUp(birdX));
+      const doorHeight = vehicle ? (door[1] - this.chapter.departure.doorTop) * vehicle.geometry.parameters.height : TRAVELER_HEIGHT;
+      const insideScale = Math.min(1, doorHeight / TRAVELER_HEIGHT);
+      this.traveler.root.scale.setScalar(THREE.MathUtils.lerp(1, insideScale, stepUp(heroX)));
+      this.companion.root.scale.setScalar(THREE.MathUtils.lerp(1, insideScale, stepUp(birdX)));
       heroMoving = walk < 1;
-      birdMoving = heroMoving;
+      birdMoving = birdWalk < 1;
       heroPose = 'walk';
-      heroOpacity = 1 - Math.min(1, Math.max(0, (t - 0.4) / 0.07));
-      birdOpacity = heroOpacity;
+      heroOpacity = 1 - THREE.MathUtils.smoothstep(t, 0.45, 0.48);
+      birdOpacity = 1 - THREE.MathUtils.smoothstep(t, 0.48, 0.5);
       if (vehicle) vehicle.position.x = vehicle.userData.baseX + drive;
     } else if (mode === 'ride') {
       // 坐上車，一起騎走；夥伴跟在後面跑。
       const vehicle = meshes[meshes.length - 1];
       const mount = Math.min(1, t / 0.45);
-      const seatX = vehicle ? vehicle.userData.baseX + (seat - 0.5) * vehicle.userData.itemWidth : x;
-      this.departCamX = x + (seatX - x) * mount;
+      const saddle = vehicle ? vehiclePoint(vehicle, seat) : { x, y: heroY + SEATED_CONTACT_Y };
+      this.departCamX = x + (saddle.x - x) * mount;
       heroX = this.departCamX + drive;
-      heroY = GROUND_Y + (mount >= 1 ? seatY : 0);
+      // 車的微幅震動也加到騎士；定格時仍共用同一個位移。
+      const bounce = go > 0 ? Math.sin(t * DEPART_SECONDS * 14) * 1.2 : 0;
+      heroY = THREE.MathUtils.lerp(heroY, saddle.y - SEATED_CONTACT_Y, THREE.MathUtils.smoothstep(mount, 0.9, 1)) + bounce;
       heroPose = mount >= 1 ? 'ride' : 'walk';
       heroMoving = mount < 1;
       birdX = heroX - THREE.MathUtils.lerp(COMPANION_GAP, RIDE_COMPANION_GAP, mount);
       birdMoving = true;
       if (vehicle) {
         vehicle.position.x = vehicle.userData.baseX + drive;
-        vehicle.position.y = vehicle.userData.baseY + (go > 0 ? Math.sin(timeSeconds * 14) * 1.2 : 0);
+        vehicle.position.y = vehicle.userData.baseY + bounce;
+        if (mount >= 1) {
+          const riderPoint = (point) => {
+            const contact = vehiclePoint(vehicle, point);
+            return { x: contact.x - saddle.x, y: contact.y - saddle.y + SEATED_CONTACT_Y };
+          };
+          ride = { footrests: this.chapter.departure.footrests.map(riderPoint),
+            grip: riderPoint(this.chapter.departure.grip), seconds: (t - 0.45) * DEPART_SECONDS };
+        }
       }
     } else if (mode === 'carry') {
       // 人已經在車廂裡：整節車連人一起開走。
@@ -598,13 +635,18 @@ export class StageRenderer {
       heroPose = 'walk';
     }
     this.traveler.baseY = heroY;
+    this.companion.baseY = birdY;
     // 交通工具的座標仍由離場時間決定；自行車踩踏，機車保持雙腳放在踏板。
     const { traveler, companion } = this.characterMotion;
-    this.animateCharacter(this.traveler, traveler, heroX, timeSeconds, deltaSeconds, heroMoving, heroPose, sprite === 'bike');
+    this.animateCharacter(this.traveler, traveler, heroX, timeSeconds, deltaSeconds, heroMoving, heroPose, cycling === true, ride);
     this.animateCharacter(this.companion, companion, birdX, timeSeconds, deltaSeconds, birdMoving);
     fade(this.traveler, heroOpacity);
     fade(this.companion, birdOpacity);
-    this.shadows.visible = false;
+    this.shadows.visible = mode === 'carry';
+    if (this.shadows.visible) {
+      this.shadows.children[0].position.x = heroX;
+      this.shadows.children[1].position.x = birdX;
+    }
     return true;
   }
 
@@ -622,7 +664,7 @@ export class StageRenderer {
     if (!this.chapter || !this.layerGroups.length) return;
     const foreground = this.layerGroups.find((layer) => layer.userData.depth === 3);
     const mesh = new THREE.Mesh(new THREE.RingGeometry(0.67, 0.92, 36), new THREE.MeshBasicMaterial({ color: this.chapter.palette.warm, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }));
-    mesh.position.set(worldX, GROUND_Y + 54, 120);
+    mesh.position.set(worldX, this.chapter.floorY + 54, 120);
     mesh.renderOrder = 490;
     foreground.add(mesh);
     this.kindnessEffects.push({ mesh, started: performance.now() });

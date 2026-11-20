@@ -209,3 +209,37 @@ body,
 @media (prefers-reduced-motion: reduce) {
   .reply-toast { transition: none; transform: translate(-50%, 0); }
 }
+
+/* 題目情境與揭曉共用底部面板，保留 17px 內文並讓長句自然換行。 */
+.game-context,
+.reveal-note {
+  color: var(--muted-ink);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.story-panel .hint:empty {
+  display: none;
+}
+
+/* 直式窄版一次看完四張卡與原因；保留卡片內文及按鈕原有大小。 */
+@media (max-width: 720px) {
+  .story-panel[data-phase="reveal"] .story-content {
+    gap: 8px;
+  }
+
+  .story-panel[data-phase="reveal"] .verdict {
+    margin-block-end: 0;
+  }
+
+  .story-panel[data-phase="reveal"] .reveal-text {
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  .revealed-swipe-card {
+    gap: 3px;
+    padding-block: 6px;
+    line-height: 1.25;
+  }
+}

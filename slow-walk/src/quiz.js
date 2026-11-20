@@ -18,6 +18,43 @@ function button(document, text, className, action) {
   return node;
 }
 
+export function renderAnswerList(target, options, { answers, selected, answerLabel = '正解' }) {
+  const document = target.ownerDocument;
+  const list = element(document, 'div', 'answer-list');
+  options.forEach(({ title, lines = [] }, index) => {
+    const isAnswer = answers.includes(index);
+    const isSelected = selected.includes(index);
+    const card = element(document, 'div', `answer-card${isAnswer ? ' is-answer' : ''}${isSelected ? ' is-selected' : ''}`);
+    card.append(element(document, 'strong', 'answer-title', title));
+    for (const line of lines) card.append(element(document, 'span', 'answer-detail', line));
+    if (isAnswer || isSelected) {
+      const mark = isAnswer && isSelected ? `${answerLabel} · 你選的` : isAnswer ? answerLabel : '你選的';
+      card.append(element(document, 'span', `answer-mark${isAnswer ? '' : ' is-mine'}`, mark));
+    }
+    list.append(card);
+  });
+  target.append(list);
+}
+
+// 依型別選擇內容檔中的揭曉欄位，回傳要在同一畫面出現的段落。
+export function getRevealMessages(game, input) {
+  if (game.type === 'swipe' && !game.scored) {
+    const count = input.choices.filter((choice) => choice === game.countSide).length;
+    return [game.revealByCount.replaceAll('{n}', String(count))];
+  }
+  if (game.type === 'agent') {
+    return [input.choice === game.agentPick ? game.revealSame : game.revealDiff];
+  }
+  if (game.type === 'stop') {
+    const outcome = input.stopped ? game.revealStopped : game.revealNever;
+    return [
+      outcome.replaceAll('{report}', String(input.report)).replaceAll('{fresh}', String(input.fresh)),
+      `${game.reveal} 這題每多跑一格，新客比例就更低，所以要及早按停。`,
+    ];
+  }
+  return [game.reveal];
+}
+
 // 僅填入題目內容，不建立面板；外層版面與焦點生命週期由主流程管理。
 export function renderQuiz(target, { chapter, result, choice, onAnswer, onContinue }) {
   const question = roadside[chapter - 1];
@@ -26,20 +63,13 @@ export function renderQuiz(target, { chapter, result, choice, onAnswer, onContin
   target.append(heading);
 
   if (typeof result === 'boolean') {
-    const feedback = element(document, 'p', `verdict ${result ? 'is-right' : 'is-wrong'}`, result ? '答對了' : `沒猜中，正解是「${question.options[question.answer]}」`);
-    // 每個選項都列出來：正解與玩家的選擇各自標示。
-    const list = element(document, 'div', 'answer-list quiz-answer-list');
-    question.options.forEach((text, index) => {
-      const card = element(document, 'div', `answer-card${index === question.answer ? ' is-answer' : ''}${index === choice ? ' is-selected' : ''}`);
-      card.append(element(document, 'strong', 'answer-title', text));
-      if (index === question.answer) card.append(element(document, 'span', 'answer-mark', '正解'));
-      else if (index === choice) card.append(element(document, 'span', 'answer-mark is-mine', '你選的'));
-      list.append(card);
-    });
+    const feedback = element(document, 'p', `verdict ${result ? 'is-right' : 'is-wrong'}`, result ? '答對了' : '沒猜中');
+    target.append(feedback);
+    renderAnswerList(target, question.options.map((title) => ({ title })), { answers: [question.answer], selected: [choice] });
     const reveal = element(document, 'p', 'reveal-text', question.reveal);
     const next = button(document, '繼續走', 'primary-button', onContinue);
     next.dataset.primary = 'true';
-    target.append(feedback, list, reveal, next);
+    target.append(reveal, next);
     return;
   }
 

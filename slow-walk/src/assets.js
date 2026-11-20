@@ -24,7 +24,8 @@ function loadImage(url) {
 
 async function loadManifest(path) {
   try {
-    const response = await fetch(`${import.meta.env.BASE_URL}${path}`);
+    // 每次都向伺服器確認，避免重新部署後拿到舊的清單而對不上新貼圖。
+    const response = await fetch(`${import.meta.env.BASE_URL}${path}`, { cache: 'no-cache' });
     if (!response.ok) return [];
     const manifest = await response.json();
     return Array.isArray(manifest.assets) ? manifest.assets.filter(isAssetEntry) : [];
@@ -39,14 +40,15 @@ export async function loadChapterAssets(chapterId) {
     loadManifest('art/common/manifest.json'),
     loadManifest(`art/${chapterName}/manifest.json`),
   ]);
+  // 同時下載所有貼圖（原本一張接一張，章節開頭會停在色塊好幾秒）。
+  // 尺寸與清單不符時仍採用：快取裡的新舊版本混用，比整章退回色塊好。
+  const entries = [...common.map((entry) => ['common', entry]), ...chapter.map((entry) => [chapterName, entry])];
+  const images = await Promise.all(entries.map(([root, entry]) => loadImage(`${import.meta.env.BASE_URL}art/${root}/${entry.file}`)));
   const assets = new Map();
-  for (const entry of [...common, ...chapter]) {
-    const root = common.includes(entry) ? 'common' : chapterName;
-    const image = await loadImage(`${import.meta.env.BASE_URL}art/${root}/${entry.file}`);
-    if (image && image.naturalWidth === entry.width && image.naturalHeight === entry.height) {
-      assets.set(entry.id, image);
-    }
-  }
+  entries.forEach(([, entry], index) => {
+    const image = images[index];
+    if (image && image.naturalWidth > 0) assets.set(entry.id, image);
+  });
   return assets;
 }
 

@@ -1,9 +1,11 @@
 import content from '../content/content.js';
+// 題目情境另存，和 game3d 共用的原稿維持一致。
+import chapterContext from '../content/context.js';
 import { chapters as chapterArt } from './chapters/index.js';
 import { getRunTotals, multiIsCorrect, personaId, sliderIsCorrect, stopIsCorrect, swipeScoreIsCorrect } from './logic.js';
 // 路上小問：只接流程與內容掛勾，沿用既有面板。
 import { createFlowState, createProgress, getWalkTarget, transitionFlow } from './flow.js';
-import { renderQuiz } from './quiz.js';
+import { getRevealMessages, renderAnswerList, renderQuiz } from './quiz.js';
 import { AudioManager } from './audio.js';
 import { StageRenderer } from './stage.js';
 import { createGuide } from './guide.js';
@@ -103,7 +105,6 @@ let confirmIgnoreUntil = 0;
 let departTimer = 0;
 let departRemaining = 0;
 let departDeadline = 0;
-let revealStep = 0;
 let personaPage = 0;
 let pendingKindness = null;
 const completedKindness = new Set();
@@ -178,18 +179,31 @@ function renderWalk(target) {
   target.append(element('p', 'story-line walk-copy', text));
 }
 
+const NO_STANDARD_ANSWER = '這題沒有標準答案';
+let chatChoice = null;
+
 function renderChat(target) {
   const chapter = currentContent();
+  const revision = flow.revision;
+  // 回覆留在面板上，讀完才把選擇交回原本的章節流程。
+  if (chatChoice !== null) {
+    const index = chatChoice;
+    target.append(element('p', 'verdict', NO_STANDARD_ANSWER));
+    target.append(lineWithUnit('你的回覆', chapter.chat.replies[index].text));
+    target.append(element('p', 'reveal-text', chapter.takeaway));
+    target.append(makeButton('繼續走', 'primary-button', () => {
+      if (performance.now() >= confirmIgnoreUntil) dispatch({ type: 'REPLY', index, revision });
+    }, { 'data-primary': true }));
+    return;
+  }
+
   const message = element('article', 'message-card');
   message.append(element('p', 'message-from', chapter.chat.from));
   message.append(element('p', 'message-text', chapter.chat.text));
   target.append(message);
   const choices = element('div', 'reply-grid');
   chapter.chat.replies.forEach((reply, index) => {
-    const button = makeButton(reply.text, 'choice-card reply-card', () => {
-      if (dispatch({ type: 'REPLY', index })) showReplyToast(reply.text);
-      audio.playNote('interact');
-    });
+    const button = makeButton(reply.text, 'choice-card reply-card', () => chooseChatReply(index, revision));
     button.dataset.replyIndex = String(index);
     button.setAttribute('aria-label', `回覆 ${index + 1}：${reply.text}`);
     choices.append(button);
@@ -197,23 +211,19 @@ function renderChat(target) {
   target.append(choices);
 }
 
-// 對話沒有對錯：回覆後在舞台上停留幾秒，讓玩家知道選擇被記下、會影響結尾的人格。
+function chooseChatReply(index, revision = flow.revision) {
+  if (flow.phase !== 'chat' || flow.menuOpen || flow.revision !== revision || chatChoice !== null
+    || performance.now() < confirmIgnoreUntil || !currentContent().chat.replies[index]) return;
+  chatChoice = index;
+  confirmIgnoreUntil = performance.now() + 300;
+  ui['story-panel'].scrollTop = 0;
+  render();
+  scheduleFocus(revision);
+  audio.playNote('interact');
+}
+
 // 路上小問玩家選了哪一個，只用來在揭曉時標示，不進流程狀態與存檔。
 let lastQuizChoice = null;
-let replyToastTimer = 0;
-function showReplyToast(text) {
-  let toast = document.getElementById('reply-toast');
-  if (!toast) {
-    toast = element('div', 'reply-toast');
-    toast.id = 'reply-toast';
-    toast.setAttribute('role', 'status');
-    ui['stage-frame'].append(toast);
-  }
-  toast.replaceChildren(element('strong', 'reply-toast-text', `「${text}」`), element('span', 'reply-toast-note', '沒有標準答案，會算進結尾的十年人格'));
-  toast.classList.add('is-visible');
-  clearTimeout(replyToastTimer);
-  replyToastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 3200);
-}
 
 function lineWithUnit(label, value, unit = '') {
   const row = element('p', 'result-value');
@@ -224,98 +234,52 @@ function lineWithUnit(label, value, unit = '') {
 
 function renderRevealMarks(target, chapter) {
   const game = chapter.game;
-  const input = flow.pending?.input ?? {};
-  if (!game) return;
+  const { input } = flow.pending;
 
+  // 正解和玩家選擇各自有文字標示，同一格可同時成立。
   if (game.type === 'pick') {
-    const list = element('div', 'answer-list');
-    game.options.forEach((option, index) => {
-      const card = element('div', `answer-card${index === game.answer ? ' is-answer' : ''}${index === input.choice ? ' is-selected' : ''}`);
-      card.append(element('strong', 'answer-title', option.title));
-      for (const line of option.lines ?? []) card.append(element('span', 'answer-detail', line));
-      if (index === game.answer) card.append(element('span', 'answer-mark', '正解')); 
-      list.append(card);
-    });
-    target.append(list);
+    renderAnswerList(target, game.options, { answers: [game.answer], selected: [input.choice] });
   } else if (game.type === 'slider') {
     const comparison = element('div', 'result-comparison');
     comparison.append(lineWithUnit('你的猜測', input.guess, game.unit));
-    comparison.append(lineWithUnit('答案', game.answer, game.unit));
-    target.append(comparison);
-  } else if (game.type === 'swipe' && game.scored) {
+    comparison.append(lineWithUnit('正解', game.answer, game.unit));
+    const low = Math.max(game.min, game.answer - game.tolerance);
+    const high = Math.min(game.max, game.answer + game.tolerance);
+    const unit = game.unit === '%' ? '%' : ` ${game.unit}`;
+    target.append(comparison, element('p', 'reveal-note', `容許範圍 ${low}～${high}${unit}`));
+  } else if (game.type === 'swipe') {
     const cards = element('div', 'revealed-swipe-list');
     game.cards.forEach((text, index) => {
       const line = element('div', 'revealed-swipe-card');
       line.append(element('span', 'revealed-card-text', text));
-      line.append(element('strong', 'revealed-card-side', game.answers[index] === 'left' ? game.left : game.right));
+      if (game.scored) line.append(element('strong', 'revealed-card-side', `正解：${game[game.answers[index]]}`));
+      line.append(element('span', 'answer-mark is-mine', `你選的：${game[input.choices[index]]}`));
       cards.append(line);
     });
     target.append(cards);
   } else if (game.type === 'multi') {
-    const cards = element('div', 'answer-list multi-answer-list');
-    game.options.forEach((option, index) => {
-      const selected = input.selected?.includes(index);
-      const card = element('div', `answer-card${game.answers.includes(index) ? ' is-answer' : ''}${selected ? ' is-selected' : ''}`);
-      card.append(element('strong', 'answer-title', option.title));
-      if (game.answers.includes(index)) card.append(element('span', 'answer-mark', '重點')); 
-      cards.append(card);
-    });
-    target.append(cards);
+    renderAnswerList(target, game.options, { answers: game.answers, selected: input.selected });
   } else if (game.type === 'stop') {
-    target.append(lineWithUnit(game.report.label, input.report, ''));
-    target.append(lineWithUnit(game.fresh.label, input.fresh, game.fresh.unit ?? ''));
+    const comparison = element('div', 'result-comparison');
+    comparison.append(lineWithUnit('你的選擇', input.stopped ? `第 ${input.tick} 格按停` : '沒有按停'));
+    comparison.append(lineWithUnit('正解', `第 1～${game.goodUntilTick} 格按停`));
+    target.append(comparison);
   } else if (game.type === 'agent') {
-    const cards = element('div', 'answer-list agent-answer-list');
-    game.options.forEach((option, index) => {
-      const card = element('div', `answer-card${index === game.agentPick ? ' is-answer' : ''}${index === input.choice ? ' is-selected' : ''}`);
-      card.append(element('strong', 'answer-title', option.title));
-      for (const line of option.lines ?? []) card.append(element('span', 'answer-detail', line));
-      if (index === game.agentPick) card.append(element('span', 'answer-mark', 'AI 選的'));
-      cards.append(card);
-    });
-    target.append(cards);
+    renderAnswerList(target, game.options, { answers: [game.agentPick], selected: [input.choice], answerLabel: 'AI 選的' });
   }
-}
-
-function getRevealMessages(chapter) {
-  const game = chapter.game;
-  const input = flow.pending?.input ?? {};
-  if (game.type === 'swipe' && !game.scored) {
-    const count = input.choices?.filter((choice) => choice === game.countSide).length ?? 0;
-    return [game.revealByCount.replaceAll('{n}', String(count))];
-  }
-  if (game.type === 'agent') {
-    return [input.choice === game.agentPick ? game.revealSame : game.revealDiff];
-  }
-  if (game.type === 'stop') {
-    const message = input.stopped ? game.revealStopped : game.revealNever;
-    return [
-      message.replaceAll('{report}', String(input.report)).replaceAll('{fresh}', String(input.fresh)),
-      game.reveal,
-    ];
-  }
-  return [game.reveal];
 }
 
 function renderReveal(target) {
   const chapter = currentContent();
-  const messages = getRevealMessages(chapter);
-  // 計分題先給結論，再看正解標示與原因。
-  if (chapter.game?.scored && revealStep === 0 && typeof flow.pending?.correct === 'boolean') {
-    target.append(element('p', `verdict ${flow.pending.correct ? 'is-right' : 'is-wrong'}`, flow.pending.correct ? '答對了' : '沒猜中，正解標在下面'));
-  }
-  target.append(element('p', 'reveal-text', messages[revealStep] ?? messages[0] ?? ''));
+  const { correct, input } = flow.pending;
+  // 結論、選擇與原因放在同一張面板，按停題也不拆成兩頁。
+  const verdictClass = correct === null ? 'verdict' : `verdict ${correct ? 'is-right' : 'is-wrong'}`;
+  const verdict = correct === null ? NO_STANDARD_ANSWER : correct ? '答對了' : '沒猜中';
+  target.append(element('p', verdictClass, verdict));
   renderRevealMarks(target, chapter);
-  const nextLabel = revealStep < messages.length - 1 ? '繼續' : '看下一站';
-  target.append(makeButton(nextLabel, 'primary-button', () => {
-    if (revealStep < messages.length - 1) {
-      revealStep += 1;
-      render();
-      audio.playNote('reveal');
-    } else {
-      dispatch({ type: 'CONTINUE_REVEAL' });
-    }
-  }, { 'data-primary': true }));
+  for (const message of getRevealMessages(chapter.game, input)) target.append(element('p', 'reveal-text', message));
+  const revision = flow.revision;
+  target.append(makeButton('看下一站', 'primary-button', () => dispatch({ type: 'CONTINUE_REVEAL', revision }), { 'data-primary': true }));
 }
 
 function renderTakeaway(target) {
@@ -445,14 +409,14 @@ function render() {
     setHint(window.matchMedia('(pointer: coarse)').matches ? '按住畫面往前走' : '按住 → 往前走');
   } else if (flow.phase === 'chat') {
     renderChat(ui['story-content']);
-    setHint('選擇一個回覆。');
+    setHint(chatChoice === null ? '選擇一個回覆。' : '');
   } else if (flow.phase === 'quiz') {
     // 小問在原本的內容容器內呈現，保留版本防護以丟棄已卸下按鈕的回呼。
     const revision = flow.revision;
     renderQuiz(ui['story-content'], {
       chapter: flow.chapter, result: flow.pending?.quiz, choice: lastQuizChoice,
       onAnswer: (index) => {
-        if (performance.now() < confirmIgnoreUntil) return;
+        if (flow.revision !== revision || typeof flow.pending?.quiz === 'boolean' || performance.now() < confirmIgnoreUntil) return;
         lastQuizChoice = index;
         if (dispatch({ type: 'QUIZ_RESULT', index, revision })) audio.playNote('interact');
       },
@@ -463,10 +427,10 @@ function render() {
     setHint('路上小問');
   } else if (flow.phase === 'game') {
     renderGame(ui['story-content']);
-    setHint('完成眼前的小互動。');
+    setHint('');
   } else if (flow.phase === 'reveal') {
     renderReveal(ui['story-content']);
-    setHint('看看這一年的發現。');
+    setHint('');
   } else if (flow.phase === 'takeaway') {
     renderTakeaway(ui['story-content']);
     setHint('帶著這句話繼續走。');
@@ -494,6 +458,8 @@ function submitGame(input, correct) {
 function renderGame(target) {
   const chapter = currentContent();
   const game = chapter.game;
+  // 作答前先交代年鑑與案例，和題目一起閱讀。
+  target.append(element('p', 'game-context', chapterContext[flow.chapter - 1]));
   target.append(element('h2', 'game-prompt', game.prompt));
 
   if (game.type === 'pick') {
@@ -642,6 +608,8 @@ function toggleStop() {
     stopGame = { chapter: flow.chapter, started: true, running: true, stopped: false, tick: 0, nextAt: performance.now() + currentContent().game.intervalMs, remainingMs: currentContent().game.intervalMs };
     audio.playNote('interact');
     render();
+    // 開始鈕換成按停鈕後，鍵盤可直接接續操作。
+    focusFirstAction();
     return;
   }
   stopGame.running = false;
@@ -750,7 +718,6 @@ function handleStateChange(previous, next) {
       swipeChoices = [];
     }
     if (next.phase === 'reveal') {
-      revealStep = 0;
       audio.playNote('reveal');
     }
     if (next.phase === 'depart') {
@@ -764,6 +731,7 @@ function handleStateChange(previous, next) {
       ui['stage-frame'].classList.remove('departing');
     }
     if (next.phase === 'chat') {
+      chatChoice = null;
       audio.playNote('interact');
       swipePointer = null;
     }
@@ -1041,11 +1009,11 @@ function onKeyDown(event) {
     return;
   }
 
-  if (flow.phase === 'chat') {
+  // 數字鍵與點選共用揭曉；閱讀回饋時保留繼續鈕的原生操作。
+  if (flow.phase === 'chat' && chatChoice === null) {
     if (/^[1-4]$/.test(event.key) && !event.repeat) {
       event.preventDefault();
-      dispatch({ type: 'REPLY', index: Number(event.key) - 1 });
-      audio.playNote('interact');
+      chooseChatReply(Number(event.key) - 1);
       return;
     }
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -1163,6 +1131,10 @@ function start() {
 }
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
+// 從瀏覽器的返回快取還原時（手機切回分頁常見），畫布可能已失效：重建目前的章節。
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted && activeStageChapter !== null) stage.setChapter(activeStageChapter);
+});
 start();
 
 

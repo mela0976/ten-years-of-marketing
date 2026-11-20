@@ -40,6 +40,13 @@ const PEDAL_SECONDS = 0.95;
 const PEDAL_BLEND_SECONDS = 0.2;
 const PEDAL_THIGH = 0.16;
 const PEDAL_SHIN = 0.21;
+// hero-shin 在小腿軸下方 55 單位、向前 6 單位處接觸踏板。
+const SHOE_PAD_X = 6;
+// 曲柄畫在靜態貼圖上。以實際踩點為中心前後踏動 12 度，鞋底離圖上的踏板不超過 4 單位。
+const PAINTED_PEDAL_ARC = Math.PI / 15;
+// hero-farm 的手掌接點相對手肘為 (2, -39)，近側手仍把書收在胸前。
+const PALM_X = 2;
+const PALM_DROP = 39;
 const RIDE_POSTURE = {
   legFar: 1.25, legNear: 1.15, shinFar: -1.3, shinNear: -1.2,
   armFar: 0.9, armNear: 0.8, forearmFar: 0.5, forearmNear: 0.5,
@@ -159,7 +166,7 @@ export class ArticulatedFigure {
     this.rideStart = null;
   }
 
-  update(worldX, timeSeconds, moving = false, pose = 'walk', { phase = 0, speed = 0, reducedMotion = false, pedals = true } = {}) {
+  update(worldX, timeSeconds, moving = false, pose = 'walk', { phase = 0, speed = 0, reducedMotion = false, pedals = true, ride } = {}) {
     this.root.position.x = worldX;
     this.root.position.y = this.baseY;
     if (!this.gait) {
@@ -171,7 +178,7 @@ export class ArticulatedFigure {
     const amplitude = reducedMotion ? REDUCED_AMPLITUDE : 1;
     if (pose === 'ride' && this.gait === TRAVELER_GAIT) {
       this.rideStart ??= timeSeconds;
-      this.updateRide(timeSeconds - this.rideStart, amplitude, pedals);
+      this.updateRide(ride?.seconds ?? timeSeconds - this.rideStart, amplitude, pedals, ride);
       this.walkStart = null;
       this.walkWeight = 0;
       this.idleSince = null;
@@ -230,7 +237,7 @@ export class ArticulatedFigure {
       rootLift = Math.min(rootLift, vertical + Math.sqrt(Math.max(0, reach ** 2 - lateral ** 2)));
       return { lateral, vertical, upperLength };
     });
-    this.root.position.y += rootLift;
+    this.root.position.y += rootLift * this.root.scale.y;
     this.legs.forEach(({ thigh, shin }, index) => {
       const { lateral, vertical, upperLength } = targets[index];
       const [thighAngle, shinAngle] = solveLeg(lateral, vertical - rootLift, upperLength, lowerLength, bend);
@@ -277,10 +284,37 @@ export class ArticulatedFigure {
     head.rotation.y = look.alternate ? BIRD_TURN * look.amount * amplitude * (1 - weight) : 0;
   }
 
-  updateRide(seconds, amplitude, pedals) {
+  updateRide(seconds, amplitude, pedals, ride) {
     this.updateTraveler(0, 0, 0, 0, 0, 0);
     this.joints.get('pelvis').rotation.z = 0;
     for (const [name, angle] of Object.entries(RIDE_POSTURE)) this.joints.get(name).rotation.z = angle;
+    if (ride) {
+      // 自行車沿兩踏板的中點轉動；機車固定在腳踏。兩者都用鞋底反算腿的角度。
+      const [near, far] = ride.footrests;
+      const cx = (near.x + far.x) / 2;
+      const cy = (near.y + far.y) / 2;
+      const angle = pedals ? Math.sin(TAU * seconds / PEDAL_SECONDS) * PAINTED_PEDAL_ARC * amplitude : 0;
+      const dx = (near.x - cx) * Math.cos(angle) - (near.y - cy) * Math.sin(angle);
+      const dy = (near.x - cx) * Math.sin(angle) + (near.y - cy) * Math.cos(angle);
+      const hipY = this.joints.get('pelvis').position.y;
+      const sole = this.gait.lowerLength;
+      this.legs.forEach(({ thigh, shin }, index) => {
+        const side = index === 0 ? 1 : -1;
+        const [upper, lower] = solveLeg(cx + side * dx - thigh.position.x, cy + side * dy - hipY,
+          -shin.position.y, Math.hypot(SHOE_PAD_X, sole), this.gait.bend);
+        thigh.rotation.z = upper;
+        shin.rotation.z = lower - Math.atan2(SHOE_PAD_X, sole);
+      });
+      const shoulder = this.joints.get('armFar');
+      const elbow = this.joints.get('forearmFar');
+      const [arm, forearm] = solveLeg(ride.grip.x - shoulder.position.x, ride.grip.y - hipY - shoulder.position.y,
+        -elbow.position.y, Math.hypot(PALM_X, PALM_DROP), 1);
+      shoulder.rotation.z = arm;
+      elbow.rotation.z = forearm - Math.atan2(PALM_X, PALM_DROP);
+      this.joints.get('armNear').rotation.z = 0;
+      this.joints.get('forearmNear').rotation.z = 0;
+      return;
+    }
     if (!pedals) return;
     const pedal = Math.sin(TAU * seconds / PEDAL_SECONDS) * smoothstep(seconds / PEDAL_BLEND_SECONDS) * amplitude;
     this.joints.get('legNear').rotation.z += PEDAL_THIGH * pedal;
