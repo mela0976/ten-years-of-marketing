@@ -19,18 +19,27 @@ function button(document, text, className, action) {
 }
 
 // 僅填入題目內容，不建立面板；外層版面與焦點生命週期由主流程管理。
-export function renderQuiz(target, { chapter, result, onAnswer, onContinue }) {
+export function renderQuiz(target, { chapter, result, choice, onAnswer, onContinue }) {
   const question = roadside[chapter - 1];
   const document = target.ownerDocument;
   const heading = element(document, 'h2', 'game-prompt', question.prompt);
   target.append(heading);
 
   if (typeof result === 'boolean') {
-    const feedback = element(document, 'p', 'score-line', result ? '答對了' : '答錯了，沒關係');
+    const feedback = element(document, 'p', `verdict ${result ? 'is-right' : 'is-wrong'}`, result ? '答對了' : `沒猜中，正解是「${question.options[question.answer]}」`);
+    // 每個選項都列出來：正解與玩家的選擇各自標示。
+    const list = element(document, 'div', 'answer-list quiz-answer-list');
+    question.options.forEach((text, index) => {
+      const card = element(document, 'div', `answer-card${index === question.answer ? ' is-answer' : ''}${index === choice ? ' is-selected' : ''}`);
+      card.append(element(document, 'strong', 'answer-title', text));
+      if (index === question.answer) card.append(element(document, 'span', 'answer-mark', '正解'));
+      else if (index === choice) card.append(element(document, 'span', 'answer-mark is-mine', '你選的'));
+      list.append(card);
+    });
     const reveal = element(document, 'p', 'reveal-text', question.reveal);
     const next = button(document, '繼續走', 'primary-button', onContinue);
     next.dataset.primary = 'true';
-    target.append(feedback, reveal, next);
+    target.append(feedback, list, reveal, next);
     return;
   }
 

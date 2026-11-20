@@ -20,7 +20,7 @@ const FOOTSTEP_DISTANCE = 36;
 
 const ui = Object.fromEntries([
   'title-screen', 'intro-text', 'start-button', 'game-screen', 'stage-frame', 'stage-host', 'stage-fallback',
-  'chapter-year', 'chapter-title', 'progress', 'mute-button', 'menu-button', 'scene-caption', 'world-prompt',
+  'chapter-year', 'chapter-title', 'progress', 'auto-button', 'mute-button', 'menu-button', 'scene-caption', 'world-prompt',
   'story-panel', 'story-content', 'hint', 'chapter-menu', 'close-menu', 'chapter-list',
 ].map((id) => [id, document.getElementById(id)]));
 
@@ -146,6 +146,8 @@ function updateHeader() {
   ui['chapter-year'].textContent = String(chapter.year);
   ui['chapter-title'].textContent = chapter.title;
   renderProgress();
+  ui['auto-button'].setAttribute('aria-pressed', String(guide.auto));
+  ui['auto-button'].classList.toggle('is-on', guide.auto);
   ui['mute-button'].textContent = flow.progress.muted ? '開啟聲音' : '靜音';
   ui['mute-button'].setAttribute('aria-pressed', String(flow.progress.muted));
   ui['mute-button'].setAttribute('aria-label', flow.progress.muted ? '開啟聲音' : '靜音');
@@ -185,7 +187,7 @@ function renderChat(target) {
   const choices = element('div', 'reply-grid');
   chapter.chat.replies.forEach((reply, index) => {
     const button = makeButton(reply.text, 'choice-card reply-card', () => {
-      dispatch({ type: 'REPLY', index });
+      if (dispatch({ type: 'REPLY', index })) showReplyToast(reply.text);
       audio.playNote('interact');
     });
     button.dataset.replyIndex = String(index);
@@ -193,6 +195,24 @@ function renderChat(target) {
     choices.append(button);
   });
   target.append(choices);
+}
+
+// 對話沒有對錯：回覆後在舞台上停留幾秒，讓玩家知道選擇被記下、會影響結尾的人格。
+// 路上小問玩家選了哪一個，只用來在揭曉時標示，不進流程狀態與存檔。
+let lastQuizChoice = null;
+let replyToastTimer = 0;
+function showReplyToast(text) {
+  let toast = document.getElementById('reply-toast');
+  if (!toast) {
+    toast = element('div', 'reply-toast');
+    toast.id = 'reply-toast';
+    toast.setAttribute('role', 'status');
+    ui['stage-frame'].append(toast);
+  }
+  toast.replaceChildren(element('strong', 'reply-toast-text', `「${text}」`), element('span', 'reply-toast-note', '沒有標準答案，會算進結尾的十年人格'));
+  toast.classList.add('is-visible');
+  clearTimeout(replyToastTimer);
+  replyToastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 3200);
 }
 
 function lineWithUnit(label, value, unit = '') {
@@ -280,6 +300,10 @@ function getRevealMessages(chapter) {
 function renderReveal(target) {
   const chapter = currentContent();
   const messages = getRevealMessages(chapter);
+  // 計分題先給結論，再看正解標示與原因。
+  if (chapter.game?.scored && revealStep === 0 && typeof flow.pending?.correct === 'boolean') {
+    target.append(element('p', `verdict ${flow.pending.correct ? 'is-right' : 'is-wrong'}`, flow.pending.correct ? '答對了' : '沒猜中，正解標在下面'));
+  }
   target.append(element('p', 'reveal-text', messages[revealStep] ?? messages[0] ?? ''));
   renderRevealMarks(target, chapter);
   const nextLabel = revealStep < messages.length - 1 ? '繼續' : '看下一站';
@@ -426,9 +450,10 @@ function render() {
     // 小問在原本的內容容器內呈現，保留版本防護以丟棄已卸下按鈕的回呼。
     const revision = flow.revision;
     renderQuiz(ui['story-content'], {
-      chapter: flow.chapter, result: flow.pending?.quiz,
+      chapter: flow.chapter, result: flow.pending?.quiz, choice: lastQuizChoice,
       onAnswer: (index) => {
         if (performance.now() < confirmIgnoreUntil) return;
+        lastQuizChoice = index;
         if (dispatch({ type: 'QUIZ_RESULT', index, revision })) audio.playNote('interact');
       },
       onContinue: () => {
@@ -1095,7 +1120,16 @@ function bindInteractions() {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('pointerdown', unlockAudio, { capture: true });
+  // 只用鍵盤玩的人也要能聽到聲音。
+  window.addEventListener('keydown', unlockAudio, { capture: true, once: true });
 
+  // 自動走：開啟後主角自己走到下一個停靠點，抵達後停下等玩家。
+  ui['auto-button'].addEventListener('click', () => {
+    const on = guide.toggleAuto();
+    updateHeader();
+    if (on && (flow.phase === 'walk1' || flow.phase === 'walk2') && !flow.menuOpen) setMoving(true);
+    else if (!on) setMoving(false);
+  });
   ui['mute-button'].addEventListener('click', () => {
     const muted = !flow.progress.muted;
     dispatch({ type: 'SET_MUTED', muted });

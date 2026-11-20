@@ -37,7 +37,8 @@ export function createGuide({ frame, menu, chapterList, hint, stage, replay }) {
   replayButton.type = 'button';
   replayButton.className = 'guide-menu-button';
   replayButton.textContent = '重看操作說明';
-  settings.append(auto, replayButton);
+  // 自動走改由標題列的開關控制，選單只留重看操作說明。
+  settings.append(replayButton);
   menu.insertBefore(settings, chapterList);
 
   function save() {
@@ -46,15 +47,15 @@ export function createGuide({ frame, menu, chapterList, hint, stage, replay }) {
   function refreshMenu() {
     auto.textContent = '自動走';
     auto.setAttribute('aria-pressed', String(state.auto));
-    auto.disabled = !state.game;
     auto.dataset.state = state.auto ? '開' : '關';
   }
-  auto.addEventListener('click', () => {
-    if (!state.game) return;
+  function toggleAuto() {
     state.auto = !state.auto;
     save();
     refreshMenu();
-  });
+    return state.auto;
+  }
+  auto.addEventListener('click', toggleAuto);
   replayButton.addEventListener('click', () => {
     state = initialState();
     distance = 0;
@@ -75,7 +76,8 @@ export function createGuide({ frame, menu, chapterList, hint, stage, replay }) {
   }
 
   return {
-    get auto() { return state.auto && state.game; },
+    get auto() { return state.auto; },
+    toggleAuto,
     enter(flow, gameType) {
       phase = flow.phase;
       if (flow.chapter !== 1) return;

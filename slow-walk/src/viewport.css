@@ -164,3 +164,48 @@ body,
     to { transform: translateY(0); }
   }
 }
+
+/* 自動走開關：開啟時用暖色底標示。 */
+#auto-button.is-on {
+  background: #c98a3c;
+  border-color: #f1c87d;
+  color: #fff9ec;
+}
+
+/* 作答結論：答對綠、沒猜中暖橘。 */
+.verdict {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.verdict.is-right { color: #3d6b52; }
+.verdict.is-wrong { color: #b0652a; }
+.answer-mark.is-mine { background: #e7d7bd; color: #5a4632; }
+
+/* 對話回覆後的短暫提示，浮在舞台上方中央。 */
+.reply-toast {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: max(72px, calc(env(safe-area-inset-top) + 64px));
+  display: grid;
+  gap: 4px;
+  max-inline-size: min(560px, calc(100% - 32px));
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: rgb(38 46 40 / 88%);
+  color: #fff9ec;
+  font-size: 17px;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  transition: opacity 300ms ease, transform 300ms ease;
+  pointer-events: none;
+}
+.reply-toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+.reply-toast-text { font-size: 18px; }
+.reply-toast-note { color: #e8d2a3; }
+@media (prefers-reduced-motion: reduce) {
+  .reply-toast { transition: none; transform: translate(-50%, 0); }
+}
